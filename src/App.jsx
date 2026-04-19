@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
-// ── Storage (localStorage) ───────────────────────────────────────────────────
+// ── Storage (localStorage — funciona en Vercel y cualquier browser) ─────────
 const K = {
   products: "rendix:v2:products",
   sales:    "rendix:v2:sales",
@@ -19,8 +19,9 @@ async function save(key, val) {
   } catch { return false; }
 }
 
-// ── Google Sheets sync (fire-and-forget) ─────────────────────────────────────
+// ── Google Sheets hub ────────────────────────────────────────────────────────
 let _sheetsUrl = "";
+
 async function postToSheets(type, payload) {
   if (!_sheetsUrl) return;
   try {
@@ -30,7 +31,19 @@ async function postToSheets(type, payload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, ...payload }),
     });
-  } catch (e) { console.warn("Sheets sync:", e); }
+  } catch (e) { console.warn("Sheets POST:", e); }
+}
+
+async function fetchCatalogFromSheets() {
+  if (!_sheetsUrl) return null;
+  try {
+    const url = _sheetsUrl + "?action=catalog";
+    const r = await fetch(url, { method: "GET", mode: "cors" });
+    if (!r.ok) return null;
+    const data = await r.json();
+    if (data.status === "ok" && data.products?.length > 0) return data.products;
+    return null;
+  } catch (e) { console.warn("Sheets GET:", e); return null; }
 }
 
 // ── CSV export ────────────────────────────────────────────────────────────────
@@ -69,6 +82,71 @@ function exportClientes(sales) {
   const header = ["Nombre","Tel/WhatsApp","Instagram","Ciudad","Nro Compras","Total Gastado","Primera Compra","Última Compra"];
   const rows = Object.values(map).map(c => [c.nombre, c.tel, c.ig, c.ciudad, c.compras, c.total, c.primera, c.ultima]);
   downloadCSV([header, ...rows], `rendix-clientes-${new Date().toISOString().slice(0,10)}.csv`);
+}
+
+// ── CSV import (catálogo desde Excel) ─────────────────────────────────────────
+function parseCSVLine(line) {
+  const result = []; let cur = ""; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { inQ = !inQ; }
+    else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ""; }
+    else { cur += ch; }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+function importCatalogFromCSV(text, existingProducts) {
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l=>l.trim());
+  if (lines.length < 2) return { ok: false, msg: "El archivo está vacío o no tiene datos." };
+
+  const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-záéíóúñ0-9]/gi,''));
+  const findCol = (...keys) => { for (const k of keys) { const i = headers.findIndex(h=>h.includes(k)); if(i>=0) return i; } return -1; };
+
+  const iSku   = findCol('sku','codigo','cod');
+  const iNom   = findCol('nombre','producto','name');
+  const iPre   = findCol('precio','price','venta','pvp');
+  const iCat   = findCol('categ','categoria');
+  const iMar   = findCol('marca','brand');
+  const iPres  = findCol('presentac','pres','format');
+  const iStk   = findCol('stock','cantidad','cant','qty');
+  const iMin   = findCol('minimo','min','stockmin','stockm');
+
+  if (iSku < 0 || iNom < 0 || iPre < 0) {
+    return { ok: false, msg: `No encontré las columnas necesarias.\nEl CSV debe tener al menos: SKU, Nombre/Producto y Precio.\nColumnas detectadas: ${headers.join(', ')}` };
+  }
+
+  const imported = []; const updated = []; const errors = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    const sku = cols[iSku]?.trim().toUpperCase();
+    if (!sku) continue;
+    const nombre = cols[iNom]?.trim() || "";
+    const precio = parseFloat((cols[iPre]||"0").replace(/[$,.\s]/g, c => c==='.'?'.':c===','?'.':'')) || 0;
+    const stock  = iStk >= 0 ? (parseInt(cols[iStk]) || 0) : null;
+    const stockMin = iMin >= 0 ? (parseInt(cols[iMin]) || 3) : 3;
+    const cat    = iCat  >= 0 ? cols[iCat]?.trim()  || "Suplementos" : "Suplementos";
+    const marca  = iMar  >= 0 ? cols[iMar]?.trim()  || ""            : "";
+    const pres   = iPres >= 0 ? cols[iPres]?.trim()  || ""           : "";
+
+    if (!nombre || precio <= 0) { errors.push(`Fila ${i+1}: SKU ${sku} sin nombre o precio`); continue; }
+
+    const exists = existingProducts.find(p => p.sku === sku);
+    if (exists) {
+      updated.push({ ...exists, nombre, precio, cat, marca, pres,
+        stock: stock !== null ? stock : exists.stock,
+        stockMin, activo: true });
+    } else {
+      imported.push({ sku, nombre, cat, marca, pres, precio,
+        stock: stock !== null ? stock : 0, stockMin, activo: true });
+    }
+  }
+
+  const kept = existingProducts.filter(p => !updated.find(u => u.sku === p.sku));
+  const final = [...imported, ...updated, ...kept];
+  return { ok: true, products: final, imported: imported.length, updated: updated.length, errors };
 }
 
 // ── Constantes y demo ────────────────────────────────────────────────────────
@@ -586,6 +664,8 @@ function ConfigTab({products,sales,onUpdateProducts,config,onUpdateConfig}) {
   const [sheetsInput,setSheetsInput]=useState(config.sheetsUrl||"");
   const [vendedorInput,setVendedorInput]=useState(config.vendedor||"Principal");
   const [testing,setTesting]=useState(false);
+  const [importMsg,setImportMsg]=useState(null);
+  const [importResult,setImportResult]=useState(null);
 
   const showMsg=(t,ms=2500)=>{setMsg(t);setTimeout(()=>setMsg(null),ms);};
 
@@ -678,6 +758,46 @@ function ConfigTab({products,sales,onUpdateProducts,config,onUpdateConfig}) {
       </Sec>
 
       {/* CSV Export */}
+      <Sec title="Importar catálogo desde Excel / CSV">
+        <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:10,lineHeight:1.6}}>
+          Exportá el catálogo del Excel como CSV → subilo acá → los precios y productos se actualizan solos en la app.
+        </div>
+        <div style={{...s.surface,marginBottom:10,fontSize:11,lineHeight:1.6}}>
+          <strong style={{color:"var(--color-text-primary)"}}>Cómo exportar desde Excel:</strong><br/>
+          1. Abrí el archivo Excel de RENDIX<br/>
+          2. Ir a la hoja <strong style={{color:"var(--color-text-primary)"}}>Catálogo Maestro</strong><br/>
+          3. Archivo → Guardar como → CSV UTF-8<br/>
+          4. Subí ese archivo acá abajo
+        </div>
+        <input type="file" accept=".csv,.txt" onChange={async e => {
+          const file = e.target.files?.[0]; if(!file) return;
+          setImportMsg(null); setImportResult(null);
+          const text = await file.text();
+          const result = importCatalogFromCSV(text, products);
+          if (!result.ok) { setImportMsg({type:"error", text: result.msg}); return; }
+          setImportResult(result);
+        }} style={{...s.input,marginBottom:8,fontSize:12}}/>
+        {importResult && (
+          <div style={{...s.surface,marginBottom:8}}>
+            <div style={{fontSize:12,color:"var(--color-text-success)",fontWeight:500,marginBottom:4}}>
+              Listo para importar: {importResult.imported} productos nuevos · {importResult.updated} actualizados
+            </div>
+            {importResult.errors.length>0&&<div style={{fontSize:11,color:"var(--color-text-warning)",marginBottom:6}}>
+              {importResult.errors.length} filas con error (se omiten)
+            </div>}
+            <button onClick={async()=>{
+              await save(K.products, importResult.products);
+              onUpdateProducts(importResult.products);
+              setImportResult(null);
+              showMsg(`✓ Catálogo actualizado · ${importResult.imported+importResult.updated} productos`);
+            }} style={{...s.btnCyan,fontSize:12,padding:"10px"}}>
+              Confirmar importación
+            </button>
+          </div>
+        )}
+        {importMsg&&<div style={{...s.surface,color:importMsg.type==="error"?"var(--color-text-danger)":"var(--color-text-success)",fontSize:12,whiteSpace:"pre-line"}}>{importMsg.text}</div>}
+      </Sec>
+
       <Sec title="Exportar a Excel / CSV">
         <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:10,lineHeight:1.6}}>
           Descargá los datos como CSV y abrí en Excel. Compatible con el archivo Excel que ya tenés.
@@ -741,9 +861,20 @@ export default function App() {
 
   const reload=useCallback(async()=>{
     const [p,s,c]=await Promise.all([load(K.products),load(K.sales),load(K.config)]);
-    setProducts(p||DEMO);
     setSales(s||[]);
     if(c){setConfig(c);_sheetsUrl=c.sheetsUrl||"";}
+    // Si Sheets está configurado, intenta leer el catálogo de ahí
+    if(c?.sheetsUrl){
+      const sheetProds = await fetchCatalogFromSheets();
+      if(sheetProds && sheetProds.length>0){
+        setProducts(sheetProds);
+        await save(K.products, sheetProds); // cache local para offline
+      } else {
+        setProducts(p||DEMO);
+      }
+    } else {
+      setProducts(p||DEMO);
+    }
     setLastSync(new Date());
     setLoading(false);
   },[]);
