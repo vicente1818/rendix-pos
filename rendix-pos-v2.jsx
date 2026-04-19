@@ -1,19 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 
-// ── Storage ──────────────────────────────────────────────────────────────────
-const SH = true;
+// ── Storage (localStorage) ───────────────────────────────────────────────────
 const K = {
   products: "rendix:v2:products",
   sales:    "rendix:v2:sales",
   config:   "rendix:v2:config",
 };
 async function load(key) {
-  try { const r = await window.storage.get(key, SH); return r ? JSON.parse(r.value) : null; }
-  catch { return null; }
+  try {
+    const val = localStorage.getItem(key);
+    return val ? JSON.parse(val) : null;
+  } catch { return null; }
 }
 async function save(key, val) {
-  try { await window.storage.set(key, JSON.stringify(val), SH); return true; }
-  catch { return false; }
+  try {
+    localStorage.setItem(key, JSON.stringify(val));
+    return true;
+  } catch { return false; }
 }
 
 // ── Google Sheets sync (fire-and-forget) ─────────────────────────────────────
