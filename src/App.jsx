@@ -451,6 +451,14 @@ function CatalogoTab({products,onUpdate}) {
     setEditing(null);
   };
 
+  const toggleActive = async (sku) => {
+    const p=products.find(x=>x.sku===sku);
+    if(!p) return;
+    const updated=products.map(x=>x.sku===sku?{...x,activo:!x.activo}:x);
+    await save(K.products,updated);
+    onUpdate(updated);
+  };
+
   return (
     <div style={{padding:"1rem",display:"flex",flexDirection:"column",gap:10}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar…" style={{...s.input,marginTop:0}}/>
@@ -460,25 +468,33 @@ function CatalogoTab({products,onUpdate}) {
         ))}
       </div>
       {filtered.map(p=>(
-        <div key={p.sku} style={s.card}>
+        <div key={p.sku} style={{...s.card,opacity:p.activo===false?0.5:1}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:500,fontSize:13,marginBottom:2}}>{p.nombre}</div>
               <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{p.sku} · {p.marca} · {p.pres}</div>
             </div>
-            <StockBadge stock={p.stock} min={p.stockMin}/>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              {p.activo===false&&<Badge color="danger">Inactivo</Badge>}
+              <StockBadge stock={p.stock} min={p.stockMin}/>
+            </div>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontWeight:500,color:"#00BFFF",fontSize:13}}>{fmt(p.precio)}</span>
-            {editing===p.sku?(
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <input type="number" value={newStock} onChange={e=>setNewStock(e.target.value)} placeholder="Cant." style={{width:65,fontSize:12}}/>
-                <button onClick={updateStock} style={{...s.btnGhost,background:"#00BFFF",border:"none",color:"#0A0A0A",fontWeight:500}}>OK</button>
-                <button onClick={()=>setEditing(null)} style={s.btnGhost}>✕</button>
-              </div>
-            ):(
-              <button onClick={()=>{setEditing(p.sku);setNewStock(p.stock);}} style={s.btnGhost}>Actualizar stock</button>
-            )}
+            <div style={{display:"flex",gap:6}}>
+              {editing===p.sku?(
+                <>
+                  <input type="number" value={newStock} onChange={e=>setNewStock(e.target.value)} placeholder="Cant." style={{width:65,fontSize:12}}/>
+                  <button onClick={updateStock} style={{...s.btnGhost,background:"#00BFFF",border:"none",color:"#0A0A0A",fontWeight:500}}>OK</button>
+                  <button onClick={()=>setEditing(null)} style={s.btnGhost}>✕</button>
+                </>
+              ):(
+                <button onClick={()=>{setEditing(p.sku);setNewStock(p.stock);}} style={s.btnGhost}>Stock</button>
+              )}
+              <button onClick={()=>toggleActive(p.sku)} style={{...s.btnGhost,color:p.activo===false?"var(--color-text-success)":"var(--color-text-danger)"}}>
+                {p.activo===false?"Activar":"Desactivar"}
+              </button>
+            </div>
           </div>
         </div>
       ))}
