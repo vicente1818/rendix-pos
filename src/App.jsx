@@ -46,6 +46,77 @@ async function fetchCatalogFromSheets() {
   } catch (e) { console.warn("Sheets GET:", e); return null; }
 }
 
+// ── Tienda Nube sync ──────────────────────────────────────────────────────────
+let _tnLastSync = 0;
+
+function fileToDataURL(file) {
+  return new Promise((res, rej) => {
+    if (file.size > 1.5 * 1024 * 1024) { rej(new Error("La imagen no puede superar 1.5 MB")); return; }
+    const reader = new FileReader();
+    reader.onload = e => res(e.target.result);
+    reader.onerror = () => rej(new Error("Error al leer el archivo"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function mapTNProducts(items) {
+  const result = [];
+  for (const p of items) {
+    const nombre = p.name?.es || p.name?.pt || Object.values(p.name || {})[0] || `Producto ${p.id}`;
+    const cat = p.categories?.[0]?.name?.es || "Suplementos";
+    const imagen = p.images?.[0]?.src || "";
+    for (const v of (p.variants || [])) {
+      const baseSku = (v.sku || `TN${p.id}V${v.id}`).toUpperCase();
+      const varLabel = (v.values || []).length
+        ? " — " + v.values.map(x => x.es || x.pt || String(x)).join(" / ")
+        : "";
+      result.push({
+        sku: baseSku,
+        nombre: p.variants.length > 1 ? nombre + varLabel : nombre,
+        cat, marca: "", pres: "",
+        precio: parseFloat(v.price || "0"),
+        stock: v.stock === null ? 999 : (parseInt(v.stock) || 0),
+        stockMin: 3, activo: true, imagen,
+        _tnId: p.id, _tnVid: v.id,
+      });
+    }
+  }
+  return result;
+}
+
+function mergeTNProducts(local, tnProds) {
+  const byVid = {};
+  tnProds.forEach(p => { if (p._tnVid) byVid[p._tnVid] = p; });
+  const updated = local.map(p => {
+    const tn = p._tnVid ? byVid[p._tnVid] : null;
+    if (!tn) return p;
+    return { ...p, precio: tn.precio, stock: tn.stock, nombre: tn.nombre, imagen: p.imagen || tn.imagen };
+  });
+  const existingVids = new Set(local.filter(p => p._tnVid).map(p => p._tnVid));
+  return [...updated, ...tnProds.filter(p => p._tnVid && !existingVids.has(p._tnVid))];
+}
+
+async function fetchFromTiendaNube(storeId, token) {
+  if (!storeId || !token) return null;
+  try {
+    let all = [], page = 1;
+    while (true) {
+      const r = await fetch(
+        `https://api.tiendanube.com/v1/${storeId}/products?page=${page}&per_page=200`,
+        { headers: { "Authentication": `bearer ${token}`, "User-Agent": "RendixPOS (pos@rendix.app)" } }
+      );
+      if (!r.ok) { console.warn("TiendaNube HTTP", r.status); return null; }
+      const data = await r.json();
+      if (!Array.isArray(data) || !data.length) break;
+      all = [...all, ...data];
+      if (data.length < 200) break;
+      page++;
+    }
+    _tnLastSync = Date.now();
+    return mapTNProducts(all);
+  } catch (e) { console.warn("TiendaNube:", e); return null; }
+}
+
 // ── CSV export ────────────────────────────────────────────────────────────────
 function downloadCSV(rows, filename) {
   const csv = "\ufeff" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -410,7 +481,8 @@ function VentaTab({products,onSaleDone,vendedor}) {
       )}
       {filtered.length===0&&<div style={{textAlign:"center",color:"var(--color-text-secondary)",padding:"2rem",fontSize:13}}>Sin resultados</div>}
       {filtered.map(p=>(
-        <div key={p.sku} onClick={()=>addP(p)} style={{...s.card,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+        <div key={p.sku} onClick={()=>addP(p)} style={{...s.card,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+          {p.imagen&&<img src={p.imagen} alt="" style={{width:44,height:44,objectFit:"cover",borderRadius:8,flexShrink:0}}/>}
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:500,fontSize:13,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.nombre}</div>
             <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{p.sku} · {p.cat}</div>
@@ -433,6 +505,8 @@ function CatalogoTab({products,onUpdate}) {
   const [editing,setEditing]=useState(null);
   const [newStock,setNewStock]=useState("");
   const [search,setSearch]=useState("");
+  const [editingImg,setEditingImg]=useState(null);
+  const [imgUrlInput,setImgUrlInput]=useState("");
 
   const cats=["Todos",...new Set(products.map(p=>p.cat))];
   const filtered=products.filter(p=>
@@ -459,6 +533,13 @@ function CatalogoTab({products,onUpdate}) {
     onUpdate(updated);
   };
 
+  const saveImg = async (sku, url) => {
+    const updated=products.map(p=>p.sku===sku?{...p,imagen:url||""}:p);
+    await save(K.products,updated);
+    onUpdate(updated);
+    setEditingImg(null);
+  };
+
   return (
     <div style={{padding:"1rem",display:"flex",flexDirection:"column",gap:10}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar…" style={{...s.input,marginTop:0}}/>
@@ -470,11 +551,18 @@ function CatalogoTab({products,onUpdate}) {
       {filtered.map(p=>(
         <div key={p.sku} style={{...s.card,opacity:p.activo===false?0.5:1}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:500,fontSize:13,marginBottom:2}}>{p.nombre}</div>
-              <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{p.sku} · {p.marca} · {p.pres}</div>
+            <div style={{display:"flex",gap:8,flex:1,minWidth:0}}>
+              <div
+                onClick={()=>{setEditingImg(editingImg===p.sku?null:p.sku);setImgUrlInput(p.imagen||"");}}
+                style={{width:44,height:44,borderRadius:8,flexShrink:0,cursor:"pointer",overflow:"hidden",background:"var(--color-background-secondary)",display:"flex",alignItems:"center",justifyContent:"center",border:"0.5px dashed var(--color-border-secondary)"}}>
+                {p.imagen?<img src={p.imagen} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{fontSize:16,opacity:0.4}}>📷</span>}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:500,fontSize:13,marginBottom:2}}>{p.nombre}</div>
+                <div style={{fontSize:11,color:"var(--color-text-secondary)"}}>{p.sku} · {p.marca} · {p.pres}</div>
+              </div>
             </div>
-            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
               {p.activo===false&&<Badge color="danger">Inactivo</Badge>}
               <StockBadge stock={p.stock} min={p.stockMin}/>
             </div>
@@ -496,6 +584,21 @@ function CatalogoTab({products,onUpdate}) {
               </button>
             </div>
           </div>
+          {editingImg===p.sku&&(
+            <div style={{...s.surface,marginTop:8,display:"flex",flexDirection:"column",gap:6}}>
+              <label style={{...s.label,marginBottom:0}}>Subir foto (máx 1.5 MB)</label>
+              <input type="file" accept="image/*" onChange={async e=>{
+                const file=e.target.files?.[0]; if(!file) return;
+                try{const url=await fileToDataURL(file);await saveImg(p.sku,url);}catch(err){alert(err.message);}
+              }} style={{fontSize:11}}/>
+              <label style={{...s.label,marginBottom:0}}>O pegar URL de imagen</label>
+              <div style={{display:"flex",gap:6}}>
+                <input value={imgUrlInput} onChange={e=>setImgUrlInput(e.target.value)} placeholder="https://..." style={{...s.input,marginTop:0,flex:1,fontSize:11}}/>
+                <button onClick={()=>saveImg(p.sku,imgUrlInput)} style={{...s.btnGhost,padding:"4px 10px",fontSize:11}}>OK</button>
+              </div>
+              {p.imagen&&<button onClick={()=>saveImg(p.sku,"")} style={{...s.btnGhost,fontSize:11,color:"var(--color-text-danger)"}}>Quitar imagen</button>}
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -674,7 +777,7 @@ function DashboardTab({sales,products}) {
 // ════════════════════════════════════════════════════════════════════════════
 function ConfigTab({products,sales,onUpdateProducts,config,onUpdateConfig}) {
   const [view,setView]=useState("main"); // main | add
-  const [form,setForm]=useState({sku:"",nombre:"",cat:CATS[3],marca:"",pres:"",precio:"",stock:"",stockMin:"3"});
+  const [form,setForm]=useState({sku:"",nombre:"",cat:CATS[3],marca:"",pres:"",precio:"",stock:"",stockMin:"3",imagen:""});
   const [saving,setSaving]=useState(false);
   const [msg,setMsg]=useState(null);
   const [sheetsInput,setSheetsInput]=useState(config.sheetsUrl||"");
@@ -682,6 +785,9 @@ function ConfigTab({products,sales,onUpdateProducts,config,onUpdateConfig}) {
   const [testing,setTesting]=useState(false);
   const [importMsg,setImportMsg]=useState(null);
   const [importResult,setImportResult]=useState(null);
+  const [tnStoreId,setTnStoreId]=useState(config.tnStoreId||"");
+  const [tnToken,setTnToken]=useState(config.tnToken||"");
+  const [testingTN,setTestingTN]=useState(false);
 
   const showMsg=(t,ms=2500)=>{setMsg(t);setTimeout(()=>setMsg(null),ms);};
 
@@ -710,12 +816,38 @@ function ConfigTab({products,sales,onUpdateProducts,config,onUpdateConfig}) {
     if(!form.sku||!form.nombre||!form.precio){showMsg("SKU, nombre y precio son obligatorios");return;}
     if(products.find(p=>p.sku===form.sku.toUpperCase())){showMsg("SKU ya existe");return;}
     setSaving(true);
-    const np={sku:form.sku.toUpperCase(),nombre:form.nombre,cat:form.cat,marca:form.marca,pres:form.pres,precio:parseFloat(form.precio)||0,stock:parseInt(form.stock)||0,stockMin:parseInt(form.stockMin)||3,activo:true};
+    const np={sku:form.sku.toUpperCase(),nombre:form.nombre,cat:form.cat,marca:form.marca,pres:form.pres,precio:parseFloat(form.precio)||0,stock:parseInt(form.stock)||0,stockMin:parseInt(form.stockMin)||3,activo:true,imagen:form.imagen||""};
     const updated=[np,...products];
     await save(K.products,updated);
     onUpdateProducts(updated);
-    setForm({sku:"",nombre:"",cat:CATS[3],marca:"",pres:"",precio:"",stock:"",stockMin:"3"});
+    setForm({sku:"",nombre:"",cat:CATS[3],marca:"",pres:"",precio:"",stock:"",stockMin:"3",imagen:""});
     setView("main");setSaving(false);showMsg("✓ Producto agregado");
+  };
+
+  const saveTNConfig = async () => {
+    const updated={...config,tnStoreId,tnToken};
+    await save(K.config,updated);
+    _tnLastSync=0;
+    onUpdateConfig(updated);
+    showMsg("Conectando con Tienda Nube...",1500);
+    const tnProds=await fetchFromTiendaNube(tnStoreId,tnToken);
+    if(tnProds){
+      const merged=mergeTNProducts(products,tnProds);
+      await save(K.products,merged);
+      onUpdateProducts(merged);
+      showMsg(`✓ Sincronizado · ${tnProds.length} productos importados de Tienda Nube`);
+    } else {
+      showMsg("Config guardada. Si no importó productos, verificá el ID y token, o puede ser un bloqueo de CORS.",5000);
+    }
+  };
+
+  const testTN = async () => {
+    if(!tnStoreId||!tnToken){showMsg("Ingresá el ID de tienda y el token primero");return;}
+    setTestingTN(true);
+    const tnProds=await fetchFromTiendaNube(tnStoreId,tnToken);
+    setTestingTN(false);
+    if(tnProds) showMsg(`✓ Conexión exitosa · ${tnProds.length} productos en tu tienda`,4000);
+    else showMsg("✗ No se pudo conectar. Revisá ID y token. Si da error de CORS, la API de TN no permite llamadas directas desde el navegador en este dominio.",6000);
   };
 
   if(view==="add") return (
@@ -737,6 +869,15 @@ function ConfigTab({products,sales,onUpdateProducts,config,onUpdateConfig}) {
           <select value={form.cat} onChange={e=>setForm(p=>({...p,cat:e.target.value}))} style={s.input}>
             {CATS.map(c=><option key={c}>{c}</option>)}
           </select>
+        </div>
+        <div style={{marginBottom:10}}>
+          <label style={s.label}>Imagen (opcional)</label>
+          <input type="file" accept="image/*" onChange={async e=>{
+            const file=e.target.files?.[0]; if(!file) return;
+            try{const url=await fileToDataURL(file);setForm(p=>({...p,imagen:url}));}catch(err){showMsg(err.message);}
+          }} style={{fontSize:11,marginBottom:4,display:"block"}}/>
+          <input type="url" value={form.imagen||""} onChange={e=>setForm(p=>({...p,imagen:e.target.value}))} placeholder="O pegar URL de imagen" style={s.input}/>
+          {form.imagen&&<img src={form.imagen} alt="" style={{marginTop:6,width:56,height:56,objectFit:"cover",borderRadius:8}}/>}
         </div>
       </Sec>
       <button onClick={addProduct} disabled={saving} style={{...s.btnCyan,opacity:saving?0.7:1}}>
@@ -770,6 +911,38 @@ function ConfigTab({products,sales,onUpdateProducts,config,onUpdateConfig}) {
         </div>
         {config.sheetsUrl&&<div style={{marginTop:8,fontSize:11,color:"var(--color-text-success)"}}>
           Sheets activo · {config.sheetsUrl.slice(0,40)}...
+        </div>}
+      </Sec>
+
+      {/* Tienda Nube */}
+      <Sec title="Tienda Nube · Sincronización automática">
+        <div style={{fontSize:11,color:"var(--color-text-secondary)",marginBottom:10,lineHeight:1.6}}>
+          Conectá tu tienda para importar el catálogo (precios, stock e imágenes) automáticamente cada 5 minutos.
+        </div>
+        <div style={{...s.surface,marginBottom:10,fontSize:11,lineHeight:1.6}}>
+          <strong style={{color:"var(--color-text-primary)"}}>Cómo obtener las credenciales:</strong><br/>
+          1. Entrá al admin de tu tienda · Mi cuenta → Aplicaciones<br/>
+          2. Buscá <strong style={{color:"var(--color-text-primary)"}}>Código de acceso a la API</strong><br/>
+          3. Copiá el <strong style={{color:"var(--color-text-primary)"}}>ID de tienda</strong> y el <strong style={{color:"var(--color-text-primary)"}}>Token</strong>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <div>
+            <label style={s.label}>ID de tienda</label>
+            <input value={tnStoreId} onChange={e=>setTnStoreId(e.target.value)} placeholder="Ej: 1234567" style={s.input}/>
+          </div>
+          <div>
+            <label style={s.label}>Token de acceso</label>
+            <input type="password" value={tnToken} onChange={e=>setTnToken(e.target.value)} placeholder="Bearer token" style={s.input}/>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <button onClick={saveTNConfig} style={{...s.btnCyan,fontSize:12,padding:"10px"}}>Guardar y sincronizar</button>
+          <button onClick={testTN} disabled={testingTN} style={{...s.btnGhost,padding:"10px",fontSize:12}}>
+            {testingTN?"Conectando...":"Probar conexión"}
+          </button>
+        </div>
+        {config.tnStoreId&&<div style={{marginTop:8,fontSize:11,color:"var(--color-text-success)"}}>
+          TN activo · Tienda #{config.tnStoreId} · sincroniza cada 5 min
         </div>}
       </Sec>
 
@@ -879,18 +1052,18 @@ export default function App() {
     const [p,s,c]=await Promise.all([load(K.products),load(K.sales),load(K.config)]);
     setSales(s||[]);
     if(c){setConfig(c);_sheetsUrl=c.sheetsUrl||"";}
-    // Si Sheets está configurado, intenta leer el catálogo de ahí
+    let prods=p||DEMO;
+    let changed=false;
     if(c?.sheetsUrl){
-      const sheetProds = await fetchCatalogFromSheets();
-      if(sheetProds && sheetProds.length>0){
-        setProducts(sheetProds);
-        await save(K.products, sheetProds); // cache local para offline
-      } else {
-        setProducts(p||DEMO);
-      }
-    } else {
-      setProducts(p||DEMO);
+      const sheetProds=await fetchCatalogFromSheets();
+      if(sheetProds?.length>0){prods=sheetProds;changed=true;}
     }
+    if(c?.tnStoreId&&c?.tnToken&&Date.now()-_tnLastSync>5*60*1000){
+      const tnProds=await fetchFromTiendaNube(c.tnStoreId,c.tnToken);
+      if(tnProds){prods=mergeTNProducts(prods,tnProds);changed=true;}
+    }
+    setProducts(prods);
+    if(changed) await save(K.products,prods);
     setLastSync(new Date());
     setLoading(false);
   },[]);
@@ -914,6 +1087,7 @@ export default function App() {
           <span style={{color:"#00BFFF",fontWeight:500,fontSize:16}}>X</span>
           <span style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginLeft:6}}>POS</span>
           {_sheetsUrl&&<span style={{fontSize:9,color:"#00BFFF",marginLeft:6,opacity:0.8}}>● Sheets</span>}
+          {config.tnStoreId&&<span style={{fontSize:9,color:"#00BFFF",marginLeft:4,opacity:0.8}}>● TN</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {alerts>0&&<Badge color="warning">{alerts} alertas</Badge>}
