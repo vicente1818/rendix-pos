@@ -4,12 +4,13 @@ const DEFAULT_FALLBACK = "/farma/landerlan-drostanolona.jpg";
 
 /**
  * Retorna la mejor URL de imagen local para un producto.
+ * Fuerza el uso de imágenes locales en /farma/ para evitar enlaces externos rotos.
  */
 export function getProductImage(product) {
   if (!product) return DEFAULT_FALLBACK;
 
   const img = (product.imagen || "").trim();
-  // Si ya tiene una imagen local en /farma/, usarla
+  // Si ya tiene una imagen local válida en /farma/, usarla directamente
   if (img.startsWith("/farma/")) {
     return img;
   }
@@ -19,9 +20,15 @@ export function getProductImage(product) {
 
   // 1. Coincidencia exacta por SKU en FARMA_CATALOG
   const exact = FARMA_CATALOG.find(p => p.sku.toLowerCase() === sku);
-  if (exact && exact.imagen) return exact.imagen;
+  if (exact && exact.imagen && exact.imagen.startsWith("/farma/")) return exact.imagen;
 
   // 2. Coincidencias por palabras clave en Nombre o SKU
+  if (name.includes("landertropin") || name.includes("gh") || sku.includes("gh")) return "/farma/landerlan-landertropin.jpg";
+  if (name.includes("gonadotropina") || name.includes("hcg") || sku.includes("hcg")) return "/farma/landerlan-hcg.jpg";
+  if (name.includes("oxandroland") || name.includes("oxandrolona") || sku.includes("oxand")) return "/farma/landerlan-oxandroland.jpg";
+  if (name.includes("metenolona") || name.includes("primobolan") || sku.includes("primo")) return "/farma/landerlan-primobolan.jpg";
+  if (name.includes("stanozoland") || name.includes("stanozolol") || sku.includes("stanoz")) return "/farma/landerlan-stanozoland.jpg";
+
   if (name.includes("boldenona") || sku.includes("bold")) return "/farma/landerlan-boldenona-250.jpg";
   if (name.includes("brontel") || sku.includes("brontel")) return "/farma/landerlan-clembuterol-brontel.jpg";
   if (name.includes("clembuterol") || sku.includes("clen")) return "/farma/landerlan-clembuterol-04.jpg";
