@@ -1,5 +1,5 @@
 @echo off
 git config core.protectNTFS false
 git add src/ public/ scripts/
-git commit -m "FIX: Coincidencia exhaustiva de imagenes locales para Landertropin, HCG, Oxandroland, Metenolona y Stanozoland"
+git commit -m "VERIFY: Verificación total de imagenes con nombres de productos y demo products"
 git push origin main --force
