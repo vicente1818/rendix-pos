@@ -27,8 +27,9 @@ export function generateWhatsAppReceiptText(sale) {
 
 export function generateWhatsAppReceiptLink(sale) {
   const text = generateWhatsAppReceiptText(sale);
-  const phone = (sale.cli?.telefono || "").replace(/\D/g, "");
-  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  const rawPhone = sale.cli?.tel || sale.cli?.telefono || "";
+  const phone = rawPhone.replace(/\D/g, "");
+  return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
 
 export function generateWhatsAppQuoteText(cart, descPct, total, cli) {
@@ -36,20 +37,20 @@ export function generateWhatsAppQuoteText(cart, descPct, total, cli) {
     i => `• *${i.qty}x* ${i.nombre} ── *${fmt(i.precio * i.qty)}*`
   ).join("\n");
 
-  const markdown = 
+  return (
     `🔥 *PRESUPUESTO RENDIX POS* 🔥\n` +
     `Hola ${cli?.nombre || "Cliente"}! Aquí tienes el detalle solicitado:\n\n` +
     `📋 *PRODUCTOS:*\n${itemLines}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     (descPct > 0 ? `🏷️ *Descuento Aplicado:* ${descPct}%\n` : "") +
     `💰 *TOTAL ESTIMADO:* *${fmt(total)}*\n\n` +
-    `⏱️ _Presupuesto válido por 24hs._`;
-
-  return markdown;
+    `⏱️ _Presupuesto válido por 24hs._`
+  );
 }
 
 export function generateWhatsAppQuoteLink(cart, descPct, total, cli) {
   const text = generateWhatsAppQuoteText(cart, descPct, total, cli);
-  const phone = (cli?.telefono || "").replace(/\D/g, "");
-  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  const rawPhone = cli?.tel || cli?.telefono || "";
+  const phone = rawPhone.replace(/\D/g, "");
+  return phone ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
 }

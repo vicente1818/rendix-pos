@@ -1,12 +1,14 @@
 export function Sparkline({ data = [12, 18, 15, 25, 22, 30, 28], color = "var(--accent-cyan)", width = 120, height = 36 }) {
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
+  const safeData = Array.isArray(data) && data.length > 0 ? data : [0];
+  const max = Math.max(...safeData, 1);
+  const min = Math.min(...safeData, 0);
   const range = max - min || 1;
+  const divisor = safeData.length > 1 ? safeData.length - 1 : 1;
 
-  const points = data.map((val, i) => {
-    const x = (i / (data.length - 1)) * width;
+  const points = safeData.map((val, i) => {
+    const x = (i / divisor) * width;
     const y = height - ((val - min) / range) * (height - 8) - 4;
-    return `${x},${y}`;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
 
   const fillPoints = `0,${height} ${points} ${width},${height}`;
