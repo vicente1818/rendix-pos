@@ -1,66 +1,55 @@
 import { fmt, fmtD } from "./constants.js";
 
+/**
+ * Generates a WhatsApp Markdown formatted ticket string with a direct wa.me link
+ */
 export function generateWhatsAppReceiptText(sale) {
-  const lines = [
-    "🧾 *RENDIX NUTRITION & FITNESS*",
-    `📍 Ticket #${sale.id}`,
-    `📅 ${fmtD(sale.fecha)}`,
-    "--------------------------------",
-    `👤 *Cliente:* ${sale.cli?.nombre || "Cliente en mostrador"}`,
-    sale.cli?.tel ? `📱 *Tel:* ${sale.cli.tel}` : null,
-    sale.cli?.ciudad ? `🌆 *Ciudad:* ${sale.cli.ciudad}` : null,
-    "--------------------------------",
-    "📦 *DETALLE DE COMPRA:*",
-  ].filter(Boolean);
+  const itemLines = (sale.items || []).map(
+    i => `• *${i.qty}x* ${i.nombre}\n  └ Subtotal: *${fmt(i.subtotal)}*`
+  ).join("\n");
 
-  (sale.items || []).forEach(i => {
-    lines.push(`• *${i.qty}x* ${i.nombre} — ${fmt(i.subtotal)}`);
-  });
+  const markdown = 
+    `🏋️‍♂️ *RENDIX POS - Ticket de Compra* 🏋️‍♂️\n` +
+    `_Comprobante Digital de Venta_\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📄 *Ticket:* \`\`\`#${sale.id}\`\`\`\n` +
+    `📅 *Fecha:* ${fmtD(sale.fecha)}\n` +
+    `👤 *Cliente:* ${sale.cli?.nombre || "Mostrador"}\n` +
+    `💳 *Pago:* ${sale.metodo} (Canal: ${sale.canal})\n\n` +
+    `🛒 *DETALLE DE PRODUCTOS:*\n${itemLines}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    (sale.descPct > 0 ? `💰 *Descuento (${sale.descPct}%):* -${fmt(sale.descMonto)}\n` : "") +
+    `💵 *TOTAL PAGADO:* *${fmt(sale.total)}*\n\n` +
+    `¡Muchas gracias por su compra! 💪`;
 
-  lines.push("--------------------------------");
-  if (sale.descPct > 0) {
-    lines.push(`🏷️ *Descuento ${sale.descPct}%:* -${fmt(sale.descMonto)}`);
-  }
-  lines.push(`💵 *TOTAL FINAL:* *${fmt(sale.total)} ARS*`);
-  lines.push(`💳 *Método de pago:* ${sale.metodo}`);
-  lines.push("--------------------------------");
-  lines.push("💪 ¡Muchas gracias por tu compra!");
-  lines.push("🔗 *RENDIX POS* — High Performance Nutrition");
-
-  return lines.join("\n");
+  return markdown;
 }
 
-export function generateWhatsAppQuoteText(cart, subtotal, descPct, descMonto, total, cli) {
-  const lines = [
-    "📋 *PRESUPUESTO RENDIX*",
-    `📅 Válido por 48 hs | ${new Date().toLocaleDateString("es-AR")}`,
-    "--------------------------------",
-  ];
-
-  if (cli?.nombre) lines.push(`👤 *Para:* ${cli.nombre}`);
-  lines.push("--------------------------------");
-  lines.push("📦 *PRODUCTOS:*");
-
-  cart.forEach(i => {
-    lines.push(`• *${i.qty}x* ${i.nombre} — ${fmt(i.precio * i.qty)}`);
-  });
-
-  lines.push("--------------------------------");
-  if (descPct > 0) {
-    lines.push(`🏷️ *Descuento Especial (${descPct}%):* -${fmt(descMonto)}`);
-  }
-  lines.push(`💰 *TOTAL:* *${fmt(total)} ARS*`);
-  lines.push("");
-  lines.push("📱 *Respondé este mensaje para confirmar tu pedido o coordinar el envío!* 💪");
-
-  return lines.join("\n");
+export function generateWhatsAppReceiptLink(sale) {
+  const text = generateWhatsAppReceiptText(sale);
+  const phone = (sale.cli?.telefono || "").replace(/\D/g, "");
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }
 
-export function sendWhatsAppMessage(phone, text) {
-  const cleanPhone = (phone || "").replace(/[^0-9]/g, "");
-  const encodedText = encodeURIComponent(text);
-  const url = cleanPhone
-    ? `https://wa.me/${cleanPhone}?text=${encodedText}`
-    : `https://wa.me/?text=${encodedText}`;
-  window.open(url, "_blank");
+export function generateWhatsAppQuoteText(cart, descPct, total, cli) {
+  const itemLines = cart.map(
+    i => `• *${i.qty}x* ${i.nombre} ── *${fmt(i.precio * i.qty)}*`
+  ).join("\n");
+
+  const markdown = 
+    `🔥 *PRESUPUESTO RENDIX POS* 🔥\n` +
+    `Hola ${cli?.nombre || "Cliente"}! Aquí tienes el detalle solicitado:\n\n` +
+    `📋 *PRODUCTOS:*\n${itemLines}\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    (descPct > 0 ? `🏷️ *Descuento Aplicado:* ${descPct}%\n` : "") +
+    `💰 *TOTAL ESTIMADO:* *${fmt(total)}*\n\n` +
+    `⏱️ _Presupuesto válido por 24hs._`;
+
+  return markdown;
+}
+
+export function generateWhatsAppQuoteLink(cart, descPct, total, cli) {
+  const text = generateWhatsAppQuoteText(cart, descPct, total, cli);
+  const phone = (cli?.telefono || "").replace(/\D/g, "");
+  return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }

@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { CANALES, METODOS, fmt, genId } from "../utils/constants.js";
 import { postToSheets, getSheetsUrl } from "../utils/sheets.js";
-import { generateWhatsAppReceiptText, generateWhatsAppQuoteText, sendWhatsAppMessage } from "../utils/whatsapp.js";
+import { generateWhatsAppReceiptLink, generateWhatsAppQuoteLink } from "../utils/whatsapp.js";
 import { Button, SectionCard, SearchInput, StockBadge } from "../components/UI.jsx";
+import { MercadoPagoQRModal } from "../components/MercadoPagoQRModal.jsx";
+import { useHaptic } from "../hooks/useHaptic.js";
+import { scanAudio } from "../utils/audio.js";
 
 export function VentaTab({
   products, onSaleDone, vendedor,
@@ -11,9 +14,12 @@ export function VentaTab({
   cli, setCli
 }) {
   const [q, setQ] = useState("");
-  const [step, setStep] = useState("productos"); // productos | datos | confirmar
+  const [step, setStep] = useState("productos"); // productos | datos | confirmar | exito
   const [saving, setSaving] = useState(false);
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
+  const [showMpQrModal, setShowMpQrModal] = useState(false);
+
+  const { hapticAdd, hapticRemove, hapticClear, hapticSuccess } = useHaptic();
 
   const filtered = products.filter(p => p.activo && p.stock > 0 &&
     (p.nombre.toLowerCase().includes(q.toLowerCase()) ||
@@ -21,15 +27,34 @@ export function VentaTab({
      p.cat.toLowerCase().includes(q.toLowerCase()))
   );
 
-  const addP = p => setCart(prev => {
-    const ex = prev.find(x => x.sku === p.sku);
-    if (ex) return prev.map(x => x.sku === p.sku ? { ...x, qty: x.qty + 1 } : x);
-    return [...prev, { sku: p.sku, nombre: p.nombre, precio: p.precio, cat: p.cat, qty: 1 }];
-  });
+  const addP = p => {
+    scanAudio.playSuccessBeep();
+    hapticAdd();
+    setCart(prev => {
+      const ex = prev.find(x => x.sku === p.sku);
+      if (ex) return prev.map(x => x.sku === p.sku ? { ...x, qty: x.qty + 1 } : x);
+      return [...prev, { sku: p.sku, nombre: p.nombre, precio: p.precio, cat: p.cat, qty: 1 }];
+    });
+  };
 
-  const delP = sku => setCart(prev => prev.filter(x => x.sku !== sku));
-  const updQ = (sku, d) => setCart(prev => prev.map(x => x.sku === sku ? { ...x, qty: Math.max(1, x.qty + d) } : x));
-  const clear = () => { setCart([]); setQ(""); setDescPct(0); setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" }); setStep("productos"); };
+  const delP = sku => {
+    hapticRemove();
+    setCart(prev => prev.filter(x => x.sku !== sku));
+  };
+
+  const updQ = (sku, d) => {
+    hapticAdd();
+    setCart(prev => prev.map(x => x.sku === sku ? { ...x, qty: Math.max(1, x.qty + d) } : x));
+  };
+
+  const clear = () => {
+    hapticClear();
+    setCart([]);
+    setQ("");
+    setDescPct(0);
+    setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
+    setStep("productos");
+  };
 
   const subtotal = cart.reduce((s, i) => s + i.precio * i.qty, 0);
   const descMonto = Math.round(subtotal * (descPct / 100));
@@ -52,19 +77,20 @@ export function VentaTab({
     await postToSheets("venta", venta);
     setLastCompletedSale(venta);
     await onSaleDone(venta, updProds);
+    hapticSuccess();
     setSaving(false);
     setStep("exito");
   };
 
   const handleShareWhatsAppQuote = () => {
-    const text = generateWhatsAppQuoteText(cart, subtotal, descPct, descMonto, total, cli);
-    sendWhatsAppMessage(cli.tel, text);
+    const link = generateWhatsAppQuoteLink(cart, descPct, total, cli);
+    window.open(link, "_blank");
   };
 
   const handleShareWhatsAppReceipt = () => {
     if (!lastCompletedSale) return;
-    const text = generateWhatsAppReceiptText(lastCompletedSale);
-    sendWhatsAppMessage(lastCompletedSale.cli?.tel, text);
+    const link = generateWhatsAppReceiptLink(lastCompletedSale);
+    window.open(link, "_blank");
   };
 
   if (step === "exito" && lastCompletedSale) return (
@@ -74,7 +100,7 @@ export function VentaTab({
         <div style={{ fontSize: 22, fontWeight: 800, color: "var(--status-success)", fontFamily: "var(--font-heading)" }}>
           ¡Venta Confirmada!
         </div>
-        <div style={{ color: "var(--text-secondary)", marginTop: 6, fontSize: 15, fontWeight: 600 }}>
+        <div style={{ color: "var(--text-secondary)", marginTop: 6, fontSize: 15, fontWeight: 600 }} className="tabular-nums">
           {fmt(lastCompletedSale.total)} · {lastCompletedSale.canal}
         </div>
         {getSheetsUrl() && <div style={{ fontSize: 11, color: "var(--status-success)", marginTop: 8 }}>✓ Sincronizado con Google Sheets</div>}
@@ -84,7 +110,7 @@ export function VentaTab({
         <Button variant="primary" fullWidth size="lg" onClick={handleShareWhatsAppReceipt} style={{ marginBottom: 8 }}>
           📲 Enviar Ticket por WhatsApp
         </Button>
-        <Button variant="secondary" fullWidth size="md" onClick={() => { setStep("productos"); setLastCompletedSale(null); }}>
+        <Button variant="secondary" fullWidth size="md" onClick={() => { setStep("productos"); setLastCompletedSale(null); clear(); }}>
           ➕ Nueva Venta
         </Button>
       </SectionCard>
@@ -102,17 +128,17 @@ export function VentaTab({
         {cart.map(i => (
           <div key={i.sku} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 6 }}>
             <span style={{ color: "var(--text-secondary)" }}>{i.qty}× {i.nombre}</span>
-            <span style={{ fontWeight: 600 }}>{fmt(i.precio * i.qty)}</span>
+            <span style={{ fontWeight: 600 }} className="tabular-nums">{fmt(i.precio * i.qty)}</span>
           </div>
         ))}
         <div style={{ borderTop: "1px dashed var(--border-subtle)", margin: "10px 0" }} />
         {descPct > 0 && (
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--status-success)", marginBottom: 6 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--status-success)", marginBottom: 6 }} className="tabular-nums">
             <span>Descuento {descPct}%</span>
             <span>-{fmt(descMonto)}</span>
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16, fontFamily: "var(--font-heading)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16, fontFamily: "var(--font-heading)" }} className="tabular-nums">
           <span>TOTAL</span>
           <span style={{ color: "var(--accent-cyan)" }}>{fmt(total)}</span>
         </div>
@@ -129,12 +155,32 @@ export function VentaTab({
         </div>
       </SectionCard>
 
-      <Button variant="primary" fullWidth size="lg" onClick={confirmar} disabled={saving}>
-        {saving ? "Guardando..." : "Confirmar y Descontar Stock 🚀"}
-      </Button>
+      {metodo === "MercadoPago QR" ? (
+        <Button variant="primary" fullWidth size="lg" onClick={() => setShowMpQrModal(true)}>
+          Generar QR Mercado Pago 📱
+        </Button>
+      ) : (
+        <Button variant="primary" fullWidth size="lg" onClick={confirmar} disabled={saving}>
+          {saving ? "Guardando..." : "Confirmar y Descontar Stock 🚀"}
+        </Button>
+      )}
+
       <Button variant="secondary" fullWidth onClick={handleShareWhatsAppQuote}>
         📋 Enviar Presupuesto por WhatsApp
       </Button>
+
+      {showMpQrModal && (
+        <MercadoPagoQRModal
+          posOrderId={genId().slice(0, 8)}
+          totalAmount={total}
+          items={cart}
+          onClose={() => setShowMpQrModal(false)}
+          onPaymentSuccess={() => {
+            setShowMpQrModal(false);
+            confirmar();
+          }}
+        />
+      )}
     </div>
   );
 
@@ -165,10 +211,10 @@ export function VentaTab({
           <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Descuento global (%)</label>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <input type="range" min={0} max={50} value={descPct} onChange={e => setDescPct(+e.target.value)} step={5} style={{ flex: 1 }} />
-            <span style={{ fontWeight: 700, minWidth: 44, textAlign: "right", color: "var(--accent-cyan)", fontSize: 15 }}>{descPct}%</span>
+            <span style={{ fontWeight: 700, minWidth: 44, textAlign: "right", color: "var(--accent-cyan)", fontSize: 15 }} className="tabular-nums">{descPct}%</span>
           </div>
           {descPct > 0 && (
-            <div style={{ fontSize: 12, color: "var(--status-success)", marginTop: 6, fontWeight: 500 }}>
+            <div style={{ fontSize: 12, color: "var(--status-success)", marginTop: 6, fontWeight: 500 }} className="tabular-nums">
               Ahorro cliente: {fmt(descMonto)} → Total con descuento: {fmt(total)}
             </div>
           )}
@@ -195,7 +241,7 @@ export function VentaTab({
       <div style={{ display: "flex", gap: 8 }}>
         <SearchInput value={q} onChange={setQ} placeholder="Buscar por producto, SKU o categoría..." />
         {cart.length > 0 && (
-          <Button variant="primary" size="md" onClick={() => setStep("datos")}>
+          <Button variant="primary" size="md" onClick={() => setStep("datos")} className="touch-target-48">
             Carrito ({cart.reduce((n, i) => n + i.qty, 0)})
           </Button>
         )}
@@ -207,22 +253,22 @@ export function VentaTab({
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-cyan)", textTransform: "uppercase" }}>
               Items en el carrito ({cart.length})
             </span>
-            <button onClick={clear} style={{ background: "none", border: "none", color: "var(--status-danger)", fontSize: 11, cursor: "pointer" }}>
+            <button onClick={clear} style={{ background: "none", border: "none", color: "var(--status-danger)", fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "6px 12px" }} className="touch-target-48">
               Vaciar
             </button>
           </div>
           {cart.map(i => (
             <div key={i.sku} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13 }}>
               <span style={{ flex: 1, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.nombre}</span>
-              <Button variant="secondary" size="sm" onClick={() => updQ(i.sku, -1)}>−</Button>
-              <span style={{ fontWeight: 700, minWidth: 24, textAlign: "center" }}>{i.qty}</span>
-              <Button variant="secondary" size="sm" onClick={() => updQ(i.sku, 1)}>+</Button>
-              <span style={{ minWidth: 70, textAlign: "right", fontWeight: 700, color: "var(--accent-cyan)" }}>{fmt(i.precio * i.qty)}</span>
-              <button onClick={() => delP(i.sku)} style={{ color: "var(--status-danger)", background: "none", border: "none", fontSize: 16, cursor: "pointer" }}>✕</button>
+              <button onClick={() => updQ(i.sku, -1)} style={{ background: "var(--bg-surface-elevated)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontWeight: 700, fontSize: 16 }} className="touch-target-48 tactile-btn">−</button>
+              <span style={{ fontWeight: 700, minWidth: 28, textAlign: "center" }} className="tabular-nums">{i.qty}</span>
+              <button onClick={() => updQ(i.sku, 1)} style={{ background: "var(--bg-surface-elevated)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)", color: "var(--text-primary)", fontWeight: 700, fontSize: 16 }} className="touch-target-48 tactile-btn">+</button>
+              <span style={{ minWidth: 70, textAlign: "right", fontWeight: 700, color: "var(--accent-cyan)" }} className="tabular-nums">{fmt(i.precio * i.qty)}</span>
+              <button onClick={() => delP(i.sku)} style={{ color: "var(--status-danger)", background: "none", border: "none", fontSize: 18, cursor: "pointer" }} className="touch-target-48">✕</button>
             </div>
           ))}
           <div style={{ borderTop: "1px dashed var(--border-subtle)", margin: "8px 0" }} />
-          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15 }} className="tabular-nums">
             <span>Subtotal</span>
             <span style={{ color: "var(--accent-cyan)" }}>{fmt(subtotal)}</span>
           </div>
@@ -240,6 +286,7 @@ export function VentaTab({
           <div
             key={p.sku}
             onClick={() => addP(p)}
+            className="tactile-btn"
             style={{
               background: "var(--bg-card)",
               border: "1px solid var(--border-subtle)",
@@ -249,7 +296,7 @@ export function VentaTab({
               display: "flex",
               alignItems: "center",
               gap: 12,
-              transition: "all 0.2s ease"
+              minHeight: 58
             }}
           >
             {p.imagen ? (
@@ -266,7 +313,7 @@ export function VentaTab({
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.sku} · {p.cat}</div>
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--accent-cyan)", marginBottom: 2 }}>{fmt(p.precio)}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "var(--accent-cyan)", marginBottom: 2 }} className="tabular-nums">{fmt(p.precio)}</div>
               <StockBadge stock={p.stock} min={p.stockMin} />
             </div>
           </div>
