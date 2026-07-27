@@ -35,11 +35,34 @@ export function exportClientes(sales) {
   downloadCSV([header, ...rows], `rendix-clientes-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
+export function parseSpanishFloat(valStr) {
+  if (!valStr) return 0;
+  let s = String(valStr).trim().replace(/[$ \u00a0]/g, "");
+  if (s.includes(",") && s.includes(".")) {
+    if (s.indexOf(".") < s.indexOf(",")) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (s.includes(",")) {
+    s = s.replace(",", ".");
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
 export function parseCSVLine(line) {
   const result = []; let cur = ""; let inQ = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"') { inQ = !inQ; }
+    if (ch === '"') {
+      if (inQ && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQ = !inQ;
+      }
+    }
     else if (ch === ',' && !inQ) { result.push(cur.trim()); cur = ""; }
     else { cur += ch; }
   }
@@ -74,7 +97,7 @@ export function importCatalogFromCSV(text, existingProducts) {
     const sku = cols[iSku]?.trim().toUpperCase();
     if (!sku) continue;
     const nombre = cols[iNom]?.trim() || "";
-    const precio = parseFloat((cols[iPre] || "0").replace(/[$,.\s]/g, c => c === '.' ? '.' : c === ',' ? '.' : '')) || 0;
+    const precio = parseSpanishFloat(cols[iPre]);
     const stock = iStk >= 0 ? (parseInt(cols[iStk]) || 0) : null;
     const stockMin = iMin >= 0 ? (parseInt(cols[iMin]) || 3) : 3;
     const cat = iCat >= 0 ? cols[iCat]?.trim() || "Suplementos" : "Suplementos";
