@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { initDatabase, getDbProducts, saveDbProducts, getDbSales, saveDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
 import { setSheetsUrl } from "./utils/sheets.js";
+import { autoFixProductImages } from "./utils/imageMatcher.js";
 import { Header } from "./components/Header.jsx";
 import { Navigation } from "./components/Navigation.jsx";
 import { VentaTab } from "./tabs/VentaTab.jsx";
@@ -30,11 +31,16 @@ export default function App() {
       await initDatabase();
       const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" };
       const prods = await getDbProducts();
+      const fixedProds = autoFixProductImages(prods);
+      
+      // Auto-save repaired image paths to IndexedDB
+      await saveDbProducts(fixedProds);
+
       const sls = await getDbSales();
 
       setConfig(cfg);
       if (cfg.sheetsUrl) setSheetsUrl(cfg.sheetsUrl);
-      setProducts(prods);
+      setProducts(fixedProds);
       setSales(sls);
       setLoaded(true);
     }

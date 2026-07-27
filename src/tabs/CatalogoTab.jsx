@@ -4,6 +4,7 @@ import { postToSheets } from "../utils/sheets.js";
 import { fileToDataURL } from "../utils/tiendanube.js";
 import { K, fmt } from "../utils/constants.js";
 import { Button, SectionCard, SearchInput, StockBadge, Badge } from "../components/UI.jsx";
+import { getProductImage } from "../utils/imageMatcher.js";
 
 export function CatalogoTab({ products, onUpdate }) {
   const [cat, setCat] = useState("Todos");
@@ -91,7 +92,15 @@ export function CatalogoTab({ products, onUpdate }) {
                     border: "1px dashed var(--border-medium)"
                   }}
                 >
-                  {p.imagen ? <img src={p.imagen} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 18 }}>📷</span>}
+                  <img
+                    src={getProductImage(p)}
+                    alt=""
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = "/farma/landerlan-drostanolona.jpg";
+                    }}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)" }}>{p.nombre}</div>

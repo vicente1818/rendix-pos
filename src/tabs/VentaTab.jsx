@@ -6,6 +6,7 @@ import { Button, SectionCard, SearchInput, StockBadge } from "../components/UI.j
 import { MercadoPagoQRModal } from "../components/MercadoPagoQRModal.jsx";
 import { useHaptic } from "../hooks/useHaptic.js";
 import { scanAudio } from "../utils/audio.js";
+import { getProductImage } from "../utils/imageMatcher.js";
 
 export function VentaTab({
   products, onSaleDone, vendedor,
@@ -299,13 +300,15 @@ export function VentaTab({
               minHeight: 58
             }}
           >
-            {p.imagen ? (
-              <img src={p.imagen} alt="" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: "var(--radius-sm)", flexShrink: 0 }} />
-            ) : (
-              <div style={{ width: 44, height: 44, borderRadius: "var(--radius-sm)", background: "var(--bg-surface-elevated)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
-                📦
-              </div>
-            )}
+            <img
+              src={getProductImage(p)}
+              alt={p.nombre}
+              onError={(e) => {
+                e.target.onerror = null;
+                e.target.src = "/farma/landerlan-drostanolona.jpg";
+              }}
+              style={{ width: 44, height: 44, objectFit: "cover", borderRadius: "var(--radius-sm)", flexShrink: 0 }}
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {p.nombre}
