@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { K, DEMO_PRODUCTS } from "./utils/constants.js";
-import { load, save } from "./utils/storage.js";
+import { initDatabase, getDbProducts, saveDbProducts, getDbSales, saveDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
 import { setSheetsUrl } from "./utils/sheets.js";
 import { Header } from "./components/Header.jsx";
 import { Navigation } from "./components/Navigation.jsx";
@@ -19,22 +18,23 @@ export default function App() {
   const [config, setConfig] = useState({ sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" });
   const [loaded, setLoaded] = useState(false);
 
+  // Global Cart State (Preserved across tab switches)
+  const [cart, setCart] = useState([]);
+  const [descPct, setDescPct] = useState(0);
+  const [canal, setCanal] = useState("Instagram");
+  const [metodo, setMetodo] = useState("Transferencia");
+  const [cli, setCli] = useState({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
+
   useEffect(() => {
     async function init() {
-      const cfg = await load(K.config) || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" };
-      const prods = await load(K.products);
-      const sls = await load(K.sales) || [];
+      await initDatabase();
+      const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" };
+      const prods = await getDbProducts();
+      const sls = await getDbSales();
 
       setConfig(cfg);
       if (cfg.sheetsUrl) setSheetsUrl(cfg.sheetsUrl);
-
-      if (prods && Array.isArray(prods) && prods.length > 0) {
-        setProducts(prods);
-      } else {
-        setProducts(DEMO_PRODUCTS);
-        await save(K.products, DEMO_PRODUCTS);
-      }
-
+      setProducts(prods);
       setSales(sls);
       setLoaded(true);
     }
@@ -47,17 +47,34 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", nextTheme);
   };
 
-  const handleSaleDone = (newSale, updatedProducts) => {
+  const handleSaleDone = async (newSale, updatedProducts) => {
     setSales(prev => [newSale, ...prev]);
     setProducts(updatedProducts);
+    await saveDbSale(newSale);
+    await saveDbProducts(updatedProducts);
+    // Clear global cart
+    setCart([]);
+    setDescPct(0);
+    setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
+  };
+
+  const updateProductsState = async (newProducts) => {
+    setProducts(newProducts);
+    await saveDbProducts(newProducts);
+  };
+
+  const updateConfigState = async (newConfig) => {
+    setConfig(newConfig);
+    await setDbConfig("appConfig", newConfig);
   };
 
   const stockAlertsCount = products.filter(p => p.stock <= p.stockMin).length;
+  const cartItemCount = cart.reduce((sum, item) => sum + item.qty, 0);
 
   if (!loaded) {
     return (
       <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--accent-cyan)", fontFamily: "var(--font-heading)", fontWeight: 700 }}>
-        Cargando RENDIX POS...
+        Cargando RENDIX POS (IndexedDB)...
       </div>
     );
   }
@@ -74,10 +91,24 @@ export default function App() {
 
       <main style={{ flex: 1, paddingBottom: 16 }}>
         {activeTab === "venta" && (
-          <VentaTab products={products} onSaleDone={handleSaleDone} vendedor={config.vendedor} />
+          <VentaTab
+            products={products}
+            onSaleDone={handleSaleDone}
+            vendedor={config.vendedor}
+            cart={cart}
+            setCart={setCart}
+            descPct={descPct}
+            setDescPct={setDescPct}
+            canal={canal}
+            setCanal={setCanal}
+            metodo={metodo}
+            setMetodo={setMetodo}
+            cli={cli}
+            setCli={setCli}
+          />
         )}
         {activeTab === "catalogo" && (
-          <CatalogoTab products={products} onUpdate={setProducts} />
+          <CatalogoTab products={products} onUpdate={updateProductsState} />
         )}
         {activeTab === "ventas" && (
           <VentasTab sales={sales} />
@@ -92,9 +123,9 @@ export default function App() {
           <ConfigTab
             products={products}
             sales={sales}
-            onUpdateProducts={setProducts}
+            onUpdateProducts={updateProductsState}
             config={config}
-            onUpdateConfig={setConfig}
+            onUpdateConfig={updateConfigState}
           />
         )}
       </main>
@@ -102,7 +133,7 @@ export default function App() {
       <Navigation
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        cartCount={0}
+        cartCount={cartItemCount}
         stockAlerts={stockAlertsCount}
       />
     </div>

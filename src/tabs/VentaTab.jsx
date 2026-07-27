@@ -1,20 +1,19 @@
 import { useState } from "react";
-import { CANALES, METODOS, K, fmt, genId } from "../utils/constants.js";
-import { save, load } from "../utils/storage.js";
+import { CANALES, METODOS, fmt, genId } from "../utils/constants.js";
 import { postToSheets, getSheetsUrl } from "../utils/sheets.js";
+import { generateWhatsAppReceiptText, generateWhatsAppQuoteText, sendWhatsAppMessage } from "../utils/whatsapp.js";
 import { Button, SectionCard, SearchInput, StockBadge } from "../components/UI.jsx";
 
-export function VentaTab({ products, onSaleDone, vendedor }) {
+export function VentaTab({
+  products, onSaleDone, vendedor,
+  cart, setCart, descPct, setDescPct,
+  canal, setCanal, metodo, setMetodo,
+  cli, setCli
+}) {
   const [q, setQ] = useState("");
-  const [cart, setCart] = useState([]);
   const [step, setStep] = useState("productos"); // productos | datos | confirmar
-  const [descPct, setDescPct] = useState(0);
-  const [canal, setCanal] = useState("Instagram");
-  const [metodo, setMetodo] = useState("Transferencia");
-  const [cli, setCli] = useState({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState(false);
-  const [presup, setPresup] = useState(false);
+  const [lastCompletedSale, setLastCompletedSale] = useState(null);
 
   const filtered = products.filter(p => p.activo && p.stock > 0 &&
     (p.nombre.toLowerCase().includes(q.toLowerCase()) ||
@@ -38,46 +37,57 @@ export function VentaTab({ products, onSaleDone, vendedor }) {
 
   const confirmar = async () => {
     setSaving(true);
-    const existingSales = await load(K.sales) || [];
-    const existingProds = await load(K.products) || products;
     const venta = {
       id: genId(), fecha: new Date().toISOString(),
       canal, metodo, vendedor, cli,
       items: cart.map(i => ({ ...i, subtotal: i.precio * i.qty })),
       subtotal, descPct, descMonto, total, estado: "Confirmado"
     };
-    const updProds = existingProds.map(p => {
+
+    const updProds = products.map(p => {
       const ci = cart.find(i => i.sku === p.sku);
       return ci ? { ...p, stock: Math.max(0, p.stock - ci.qty) } : p;
     });
-    await save(K.sales, [venta, ...existingSales]);
-    await save(K.products, updProds);
+
     await postToSheets("venta", venta);
-    onSaleDone(venta, updProds);
+    setLastCompletedSale(venta);
+    await onSaleDone(venta, updProds);
     setSaving(false);
-    setDone(true);
-    setTimeout(() => { clear(); setDone(false); }, 2500);
+    setStep("exito");
   };
 
-  const presupText = () => {
-    const lines = ["*Presupuesto RENDIX*", ""];
-    cart.forEach(i => lines.push(`• ${i.nombre} ×${i.qty} — ${fmt(i.precio * i.qty)}`));
-    lines.push("");
-    if (descPct > 0) lines.push(`Descuento ${descPct}%: -${fmt(descMonto)}`);
-    lines.push(`*Total: ${fmt(total)}*`, "", "Escribinos por privado para confirmar 💪");
-    navigator.clipboard?.writeText(lines.join("\n")).catch(() => {});
-    setPresup(true);
-    setTimeout(() => setPresup(false), 2000);
+  const handleShareWhatsAppQuote = () => {
+    const text = generateWhatsAppQuoteText(cart, subtotal, descPct, descMonto, total, cli);
+    sendWhatsAppMessage(cli.tel, text);
   };
 
-  if (done) return (
-    <div style={{ textAlign: "center", padding: "4rem 2rem" }} className="animate-fade-in">
-      <div style={{ fontSize: 64, marginBottom: 16, color: "var(--status-success)" }}>✓</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: "var(--status-success)", fontFamily: "var(--font-heading)" }}>
-        Venta confirmada
+  const handleShareWhatsAppReceipt = () => {
+    if (!lastCompletedSale) return;
+    const text = generateWhatsAppReceiptText(lastCompletedSale);
+    sendWhatsAppMessage(lastCompletedSale.cli?.tel, text);
+  };
+
+  if (step === "exito" && lastCompletedSale) return (
+    <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 14 }} className="animate-fade-in">
+      <div style={{ textAlign: "center", padding: "2rem 1rem" }}>
+        <div style={{ fontSize: 64, marginBottom: 12, color: "var(--status-success)" }}>✓</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: "var(--status-success)", fontFamily: "var(--font-heading)" }}>
+          ¡Venta Confirmada!
+        </div>
+        <div style={{ color: "var(--text-secondary)", marginTop: 6, fontSize: 15, fontWeight: 600 }}>
+          {fmt(lastCompletedSale.total)} · {lastCompletedSale.canal}
+        </div>
+        {getSheetsUrl() && <div style={{ fontSize: 11, color: "var(--status-success)", marginTop: 8 }}>✓ Sincronizado con Google Sheets</div>}
       </div>
-      <div style={{ color: "var(--text-secondary)", marginTop: 6, fontSize: 14 }}>{fmt(total)} · {canal}</div>
-      {getSheetsUrl() && <div style={{ fontSize: 11, color: "var(--status-success)", marginTop: 8 }}>Sincronizado con Google Sheets</div>}
+
+      <SectionCard title="Acciones de comprobante">
+        <Button variant="primary" fullWidth size="lg" onClick={handleShareWhatsAppReceipt} style={{ marginBottom: 8 }}>
+          📲 Enviar Ticket por WhatsApp
+        </Button>
+        <Button variant="secondary" fullWidth size="md" onClick={() => { setStep("productos"); setLastCompletedSale(null); }}>
+          ➕ Nueva Venta
+        </Button>
+      </SectionCard>
     </div>
   );
 
@@ -122,8 +132,8 @@ export function VentaTab({ products, onSaleDone, vendedor }) {
       <Button variant="primary" fullWidth size="lg" onClick={confirmar} disabled={saving}>
         {saving ? "Guardando..." : "Confirmar y Descontar Stock 🚀"}
       </Button>
-      <Button variant="ghost" fullWidth onClick={presupText}>
-        {presup ? "¡Texto Copiado!" : "📋 Copiar Presupuesto para WhatsApp"}
+      <Button variant="secondary" fullWidth onClick={handleShareWhatsAppQuote}>
+        📋 Enviar Presupuesto por WhatsApp
       </Button>
     </div>
   );
@@ -166,7 +176,7 @@ export function VentaTab({ products, onSaleDone, vendedor }) {
       </SectionCard>
 
       <SectionCard title="Información del cliente">
-        {[["nombre", "Nombre completado *", "text"], ["tel", "Tel / WhatsApp *", "tel"], ["ig", "Instagram @handle", "text"], ["ciudad", "Ciudad", "text"], ["notas", "Notas adicionales", "text"]].map(([k, l, t]) => (
+        {[["nombre", "Nombre completo", "text"], ["tel", "Tel / WhatsApp (con código área)", "tel"], ["ig", "Instagram @handle", "text"], ["ciudad", "Ciudad", "text"], ["notas", "Notas adicionales", "text"]].map(([k, l, t]) => (
           <div key={k} style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>{l}</label>
             <input type={t} value={cli[k]} onChange={e => setCli(p => ({ ...p, [k]: e.target.value }))} placeholder={l} />
@@ -193,8 +203,13 @@ export function VentaTab({ products, onSaleDone, vendedor }) {
 
       {cart.length > 0 && (
         <SectionCard style={{ borderColor: "rgba(0, 229, 255, 0.3)", background: "var(--bg-surface)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-cyan)", marginBottom: 8, textTransform: "uppercase" }}>
-            Items en el carrito ({cart.length})
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-cyan)", textTransform: "uppercase" }}>
+              Items en el carrito ({cart.length})
+            </span>
+            <button onClick={clear} style={{ background: "none", border: "none", color: "var(--status-danger)", fontSize: 11, cursor: "pointer" }}>
+              Vaciar
+            </button>
           </div>
           {cart.map(i => (
             <div key={i.sku} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13 }}>
@@ -203,7 +218,7 @@ export function VentaTab({ products, onSaleDone, vendedor }) {
               <span style={{ fontWeight: 700, minWidth: 24, textAlign: "center" }}>{i.qty}</span>
               <Button variant="secondary" size="sm" onClick={() => updQ(i.sku, 1)}>+</Button>
               <span style={{ minWidth: 70, textAlign: "right", fontWeight: 700, color: "var(--accent-cyan)" }}>{fmt(i.precio * i.qty)}</span>
-              <button onClick={() => delP(i.sku)} style={{ color: "var(--status-danger)", background: "none", border: "none", fontSize: 16, cursor:"pointer" }}>✕</button>
+              <button onClick={() => delP(i.sku)} style={{ color: "var(--status-danger)", background: "none", border: "none", fontSize: 16, cursor: "pointer" }}>✕</button>
             </div>
           ))}
           <div style={{ borderTop: "1px dashed var(--border-subtle)", margin: "8px 0" }} />
