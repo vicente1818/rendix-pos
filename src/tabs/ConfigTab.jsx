@@ -5,6 +5,7 @@ import { setSheetsUrl, fetchCatalogFromSheets } from "../utils/sheets.js";
 import { fetchFromTiendaNube, mergeTNProducts } from "../utils/tiendanube.js";
 import { exportVentas, exportProductos, exportClientes, importCatalogFromCSV } from "../utils/csv.js";
 import { Button, SectionCard } from "../components/UI.jsx";
+import { FARMA_CATALOG, mergeFarmaIntoExistingCatalog } from "../data/farma-catalog.js";
 
 export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateConfig }) {
   const [view, setView] = useState("main"); // main | add
@@ -19,6 +20,8 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
   const [tnStoreId, setTnStoreId] = useState(config.tnStoreId || "");
   const [tnToken, setTnToken] = useState(config.tnToken || "");
   const [testingTN, setTestingTN] = useState(false);
+  const [farmaPreview, setFarmaPreview] = useState(false);
+  const [farmaImporting, setFarmaImporting] = useState(false);
 
   const showMsg = (t, ms = 2500) => { setMsg(t); setTimeout(() => setMsg(null), ms); };
 
@@ -129,6 +132,17 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     </div>
   );
 
+  const importFarmaCatalog = async () => {
+    setFarmaImporting(true);
+    const merged = mergeFarmaIntoExistingCatalog(products);
+    await save(K.products, merged);
+    onUpdateProducts(merged);
+    setFarmaImporting(false);
+    setFarmaPreview(false);
+    const added = merged.length - products.length;
+    showMsg(`✓ Catálogo FARMA importado: ${added} productos nuevos con imágenes y precios`);
+  };
+
   return (
     <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 14 }} className="animate-fade-in">
       {msg && (
@@ -140,6 +154,45 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
       <Button variant="primary" fullWidth size="lg" onClick={() => setView("add")}>
         ➕ Agregar Producto al Catálogo
       </Button>
+
+      {/* ── FARMA EL NEGRO CATALOG IMPORT ──────────────────── */}
+      <SectionCard title="🏥 Importar Catálogo FARMA EL NEGRO">
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5 }}>
+          Importa <strong style={{ color: "var(--accent-cyan)" }}>{FARMA_CATALOG.length} productos farmacéuticos</strong> de
+          <strong> El Negro Suplementos</strong> con imágenes reales, precios en ₲ y marcas <em>Fapasa</em> y <em>Eticos</em>.
+        </div>
+        {!farmaPreview ? (
+          <Button variant="secondary" fullWidth size="sm" onClick={() => setFarmaPreview(true)}>
+            👁 Previsualizar Catálogo Farma
+          </Button>
+        ) : (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10, maxHeight: 260, overflowY: "auto" }}>
+              {FARMA_CATALOG.map(p => (
+                <div key={p.sku} style={{ background: "var(--bg-surface)", borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--border-subtle)" }}>
+                  <img
+                    src={p.imagenThumb}
+                    alt={p.nombre}
+                    style={{ width: "100%", aspectRatio: "1", objectFit: "cover", display: "block" }}
+                    onError={e => { e.target.style.display = "none"; }}
+                  />
+                  <div style={{ padding: "6px 8px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1.3, marginBottom: 2 }}>{p.nombre.replace("Fapasa – ", "").replace("Eticos – ", "")}</div>
+                    <div style={{ fontSize: 10, color: "var(--text-muted)" }}>{p.marca}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-cyan)" }}>₲ {p.precio.toLocaleString()}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button variant="primary" size="sm" style={{ flex: 1 }} onClick={importFarmaCatalog} disabled={farmaImporting}>
+                {farmaImporting ? "Importando..." : "✓ Importar Ahora"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setFarmaPreview(false)}>Cancelar</Button>
+            </div>
+          </>
+        )}
+      </SectionCard>
 
       <SectionCard title="Sincronización Google Sheets Hub">
         <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>URL del Web App de Apps Script</label>
