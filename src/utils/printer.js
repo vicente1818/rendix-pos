@@ -86,3 +86,41 @@ export async function printViaWebUSB(sale) {
   await device.transferOut(endpoint.endpointNumber, bytes);
   await device.close();
 }
+
+/**
+ * Direct ESC/POS Web Bluetooth Thermal Receipt Printing
+ */
+export async function printViaWebBluetooth(sale) {
+  if (!("bluetooth" in navigator)) {
+    throw new Error("Web Bluetooth API no está disponible en este navegador");
+  }
+
+  const device = await navigator.bluetooth.requestDevice({
+    acceptAllDevices: true,
+    optionalServices: [
+      "000018f0-0000-1000-8000-00805f9b34fb",
+      "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+    ]
+  });
+
+  const server = await device.gatt.connect();
+  const services = await server.getPrimaryServices();
+  if (!services.length) throw new Error("No se encontraron servicios Bluetooth en la impresora");
+
+  const characteristics = await services[0].getCharacteristics();
+  const writeChar = characteristics.find(c => c.properties.write || c.properties.writeWithoutResponse);
+
+  if (!writeChar) throw new Error("No se encontró característica de escritura ESC/POS");
+
+  const bytes = generateEscPosBytes(sale);
+  const CHUNK_SIZE = 512;
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    const chunk = bytes.slice(i, i + CHUNK_SIZE);
+    if (writeChar.properties.writeWithoutResponse) {
+      await writeChar.writeValueWithoutResponse(chunk);
+    } else {
+      await writeChar.writeValueWithResponse(chunk);
+    }
+  }
+}
+
