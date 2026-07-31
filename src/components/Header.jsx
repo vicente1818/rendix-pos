@@ -1,4 +1,4 @@
-export function Header({ theme, onToggleTheme, vendedor, sheetsConnected, tnConnected }) {
+export function Header({ theme, onToggleTheme, vendedor, sheetsConnected, tnConnected, usdRate }) {
   return (
     <header style={{
       background: "var(--bg-glass)",
@@ -32,10 +32,15 @@ export function Header({ theme, onToggleTheme, vendedor, sheetsConnected, tnConn
               RENDIX <span style={{ color: "var(--accent-cyan)", fontWeight: 400, fontSize: 13 }}>POS</span>
             </span>
           </div>
-          <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ fontSize: 10, color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 6, fontFamily: "var(--font-mono, monospace)" }}>
             <span style={{letterSpacing:"0.05em"}}>◆ {vendedor || "Principal"}</span>
             {sheetsConnected && <span style={{ color: "var(--status-success)" }}>● Sheets</span>}
             {tnConnected && <span style={{ color: "var(--accent-cyan)" }}>● TN</span>}
+            {usdRate && (
+              <span style={{ color: "var(--accent-green, #00FF88)", fontWeight: 700, letterSpacing: "0.02em" }}>
+                $ {Math.round(usdRate).toLocaleString("es-AR")}
+              </span>
+            )}
           </div>
         </div>
       </div>

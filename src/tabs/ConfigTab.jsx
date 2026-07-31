@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { setApiLayerKeys, getUsdToArs, validatePhone, clearRateCache } from "../utils/apilayer.js";
 import { CATS, K } from "../utils/constants.js";
 import { save } from "../utils/storage.js";
 import { setSheetsUrl, fetchCatalogFromSheets } from "../utils/sheets.js";
@@ -123,6 +124,12 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
   const [importResult, setImportResult] = useState(null);
   const [tnStoreId, setTnStoreId] = useState(cfg.tnStoreId || "");
   const [tnToken, setTnToken] = useState(cfg.tnToken || "");
+  const [exchangeKey, setExchangeKey] = useState(cfg.exchangeKey || "");
+  const [numverifyKey, setNumverifyKey] = useState(cfg.numverifyKey || "");
+  const [mailboxKey, setMailboxKey] = useState(cfg.mailboxKey || "");
+  const [vatKey, setVatKey] = useState(cfg.vatKey || "");
+  const [apiTestResult, setApiTestResult] = useState(null);
+  const [apiTesting, setApiTesting] = useState(false);
   const [testingTN, setTestingTN] = useState(false);
   const [farmaPreview, setFarmaPreview] = useState(false);
   const [farmaImporting, setFarmaImporting] = useState(false);
@@ -171,6 +178,30 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     onUpdateConfig(updated);
     showMsg("✓ Credenciales de Tienda Nube guardadas");
   }, [cfg, tnStoreId, tnToken, onUpdateConfig, showMsg]);
+
+  const saveApiLayerConfig = useCallback(async () => {
+    const updated = { ...cfg, exchangeKey, numverifyKey, mailboxKey, vatKey };
+    await save(K.config, updated);
+    setApiLayerKeys({ exchangeKey, numverifyKey, mailboxKey, vatKey });
+    clearRateCache();
+    onUpdateConfig(updated);
+    showMsg("✓ Claves APILayer guardadas");
+  }, [cfg, exchangeKey, numverifyKey, mailboxKey, vatKey, onUpdateConfig, showMsg]);
+
+  const testApiLayerRate = useCallback(async () => {
+    setApiTesting(true);
+    setApiTestResult(null);
+    try {
+      setApiLayerKeys({ exchangeKey, numverifyKey, mailboxKey, vatKey });
+      clearRateCache();
+      const rate = await getUsdToArs();
+      setApiTestResult({ ok: true, msg: `✓ 1 USD = $ ${Math.round(rate).toLocaleString("es-AR")} ARS` });
+    } catch (err) {
+      setApiTestResult({ ok: false, msg: `⚠️ ${err.message}` });
+    } finally {
+      setApiTesting(false);
+    }
+  }, [exchangeKey, numverifyKey, mailboxKey, vatKey]);
 
   // ── Sync handlers ────────────────────────────────────────────────────────
   const syncSheetsCatalog = useCallback(async () => {
@@ -574,6 +605,107 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
             {testingTN
               ? <><span className="cn-spinner" />Sincronizando...</>
               : "Sync Stock TN"}
+          </Button>
+        </div>
+      </SectionCard>
+
+      {/* ── APILAYER API KEYS ─────────────────────────────────────────────── */}
+      <SectionCard title="🔑 APILayer — Cotizaciones & Validaciones" style={GLASS_CARD}>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 10, lineHeight: 1.5 }}>
+          Conectá las APIs de{" "}
+          <span style={{ color: "var(--accent-cyan)" }}>exchangerates_data</span>,{" "}
+          <span style={{ color: "var(--accent-cyan)" }}>numverify</span>,{" "}
+          <span style={{ color: "var(--accent-cyan)" }}>mailboxlayer</span> y{" "}
+          <span style={{ color: "var(--accent-cyan)" }}>vatlayer</span> para validación en tiempo real y cotización USD/ARS.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label htmlFor="api-exchange-key" style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Exchange Rates (USD/ARS) — exchangerates_data
+            </label>
+            <input
+              id="api-exchange-key"
+              type="password"
+              value={exchangeKey}
+              onChange={e => setExchangeKey(e.target.value)}
+              placeholder="Clave API exchangerates_data"
+              style={{ minHeight: 44, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+          </div>
+          <div>
+            <label htmlFor="api-numverify-key" style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Validación de Teléfono — numverify
+            </label>
+            <input
+              id="api-numverify-key"
+              type="password"
+              value={numverifyKey}
+              onChange={e => setNumverifyKey(e.target.value)}
+              placeholder="Clave API numverify"
+              style={{ minHeight: 44, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+          </div>
+          <div>
+            <label htmlFor="api-mailbox-key" style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Validación de Email — mailboxlayer
+            </label>
+            <input
+              id="api-mailbox-key"
+              type="password"
+              value={mailboxKey}
+              onChange={e => setMailboxKey(e.target.value)}
+              placeholder="Clave API mailboxlayer"
+              style={{ minHeight: 44, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+          </div>
+          <div>
+            <label htmlFor="api-vat-key" style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+              Tasas de IVA — vatlayer
+            </label>
+            <input
+              id="api-vat-key"
+              type="password"
+              value={vatKey}
+              onChange={e => setVatKey(e.target.value)}
+              placeholder="Clave API vatlayer"
+              style={{ minHeight: 44, fontFamily: "'JetBrains Mono', monospace" }}
+            />
+          </div>
+        </div>
+
+        {apiTestResult && (
+          <div style={{
+            fontSize: 12,
+            padding: "8px 12px",
+            borderRadius: "var(--radius-sm)",
+            marginBottom: 10,
+            fontFamily: "'JetBrains Mono', monospace",
+            ...(apiTestResult.ok
+              ? { background: "rgba(0,255,136,0.08)", border: "1px solid rgba(0,255,136,0.3)", color: "var(--status-success)" }
+              : { background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.3)", color: "var(--status-danger)" }),
+          }}>
+            {apiTestResult.msg}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={saveApiLayerConfig}
+            style={{ flex: 1, minHeight: 44, boxShadow: "0 0 12px rgba(0,229,255,0.3)" }}
+          >
+            Guardar Claves
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={testApiLayerRate}
+            disabled={apiTesting || !exchangeKey}
+            style={{ flex: 1, minHeight: 44 }}
+          >
+            {apiTesting ? <><span className="cn-spinner" />Probando...</> : "Probar USD/ARS"}
           </Button>
         </div>
       </SectionCard>

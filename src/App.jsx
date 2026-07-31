@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { initDatabase, getDbProducts, saveDbProducts, getDbSales, saveDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
 import { setSheetsUrl } from "./utils/sheets.js";
 import { autoFixProductImages } from "./utils/imageMatcher.js";
+import { setApiLayerKeys, getUsdToArs } from "./utils/apilayer.js";
 import { Header } from "./components/Header.jsx";
 import { Navigation } from "./components/Navigation.jsx";
 import { VentaTab } from "./tabs/VentaTab.jsx";
@@ -16,8 +17,9 @@ export default function App() {
   const [theme, setTheme] = useState("dark");
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
-  const [config, setConfig] = useState({ sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" });
+  const [config, setConfig] = useState({ sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "", exchangeKey: "", numverifyKey: "", mailboxKey: "", vatKey: "" });
   const [loaded, setLoaded] = useState(false);
+  const [usdRate, setUsdRate] = useState(null);
 
   // Global Cart State (Preserved across tab switches)
   const [cart, setCart] = useState([]);
@@ -29,7 +31,7 @@ export default function App() {
   useEffect(() => {
     async function init() {
       await initDatabase();
-      const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" };
+      const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "", exchangeKey: "", numverifyKey: "", mailboxKey: "", vatKey: "" };
       const prods = await getDbProducts();
       const fixedProds = autoFixProductImages(prods);
       
@@ -40,9 +42,14 @@ export default function App() {
 
       setConfig(cfg);
       if (cfg.sheetsUrl) setSheetsUrl(cfg.sheetsUrl);
+      setApiLayerKeys({ exchangeKey: cfg.exchangeKey, numverifyKey: cfg.numverifyKey, mailboxKey: cfg.mailboxKey, vatKey: cfg.vatKey });
       setProducts(fixedProds);
       setSales(sls);
       setLoaded(true);
+      // Fetch USD/ARS rate in background if key configured
+      if (cfg.exchangeKey) {
+        getUsdToArs().then(setUsdRate).catch(() => {});
+      }
     }
     init();
   }, []);
@@ -72,6 +79,10 @@ export default function App() {
   const updateConfigState = async (newConfig) => {
     setConfig(newConfig);
     await setDbConfig("appConfig", newConfig);
+    setApiLayerKeys({ exchangeKey: newConfig.exchangeKey, numverifyKey: newConfig.numverifyKey, mailboxKey: newConfig.mailboxKey, vatKey: newConfig.vatKey });
+    if (newConfig.exchangeKey) {
+      getUsdToArs().then(setUsdRate).catch(() => {});
+    }
   };
 
   const stockAlertsCount = products.filter(p => p.stock <= p.stockMin).length;
@@ -126,6 +137,7 @@ export default function App() {
         vendedor={config.vendedor}
         sheetsConnected={Boolean(config.sheetsUrl)}
         tnConnected={Boolean(config.tnStoreId && config.tnToken)}
+        usdRate={usdRate}
       />
 
       <main style={{ flex: 1, paddingBottom: 16 }}>
