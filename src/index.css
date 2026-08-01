@@ -73,6 +73,13 @@
   /* Safe area insets (notch / home-indicator support) */
   --safe-area-top:    env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* ── Spacing Scale ──────────────────────────────────────────── */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
 }
 
 /* ── Light Theme Overrides ──────────────────────────────────── */
@@ -382,3 +389,91 @@ button {
 .animate-fade-in {
   animation: fadeIn var(--duration-normal) cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* ── Badge Utility ───────────────────────────────────────────── */
+/* Pairs with the Badge component in UI.jsx; also usable standalone */
+.cn-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs) var(--spacing-sm);  /* 4px 8px */
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 20px;
+  line-height: 1;
+}
+
+.cn-badge--count {
+  background: var(--accent-cyan);
+  color: var(--bg-app);
+  box-shadow: 0 0 6px rgba(0, 229, 255, 0.7);
+}
+
+.cn-badge--alert {
+  background: var(--status-warning);
+  color: var(--bg-app);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.7);
+}
+
+.cn-badge--critical {
+  background: var(--status-danger);
+  color: var(--bg-app);
+}
+
+/* ── Pulse-Red — critical stock indicator ───────────────────── */
+/* Uses box-shadow spread so the element geometry stays unchanged  */
+/* and layout is not reflowed on every animation frame.            */
+@keyframes pulseRed {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.85), 0 0 0 0 rgba(239, 68, 68, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.95), 0 0 0 5px rgba(239, 68, 68, 0);
+  }
+}
+
+.pulse-red {
+  animation: pulseRed 1s ease-in-out infinite;
+}
+
+/* ── Toast Notifications ─────────────────────────────────────── */
+.cn-toast-container {
+  position: fixed;
+  top: var(--spacing-lg);
+  right: var(--spacing-lg);
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  pointer-events: none;
+  max-width: min(320px, calc(100vw - 32px));
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.cn-toast {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-size: 13px;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-card);
+  pointer-events: auto;
+  animation: toastIn var(--duration-normal) var(--ease-out-expo) forwards;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+}
+
+.cn-toast--success { border-left: 3px solid var(--status-success); }
+.cn-toast--warning { border-left: 3px solid var(--status-warning); }
+.cn-toast--danger  { border-left: 3px solid var(--status-danger); }
+.cn-toast--info    { border-left: 3px solid var(--status-info); }

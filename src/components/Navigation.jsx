@@ -89,8 +89,10 @@ const TABS_CONFIG = [
 // Extracted from render so React always receives the same object reference (PERF)
 
 // Nav container: Circuit Noir upward glow horizon (DESIGN)
+// THEMING FIX: var(--bg-glass) resolves to rgba(255,255,255,0.88) in light theme;
+// a hardcoded RGBA would remain dark regardless of the data-theme toggle.
 const NAV_STYLE = {
-  background: "rgba(14, 20, 32, 0.85)",
+  background: "var(--bg-glass)",
   backdropFilter: "blur(20px)",
   WebkitBackdropFilter: "blur(20px)",
   // DESIGN: cyan separator + upward glow horizon (was: generic var(--border-subtle))
@@ -133,11 +135,13 @@ const BTN_BASE = {
 };
 
 // PERF: two pre-defined objects; selected by ternary in render — no new object per tab
+// TOKEN FIX: replaced hardcoded hex/rgba with CSS custom properties so light-theme
+// overrides in [data-theme="light"] take effect on these inline style values.
 const BTN_STYLE_ACTIVE = {
   ...BTN_BASE,
-  background: "rgba(0, 229, 255, 0.1)",
-  color: "#00E5FF",
-  border: "1px solid rgba(0, 229, 255, 0.6)",
+  background: "var(--accent-cyan-glow)",
+  color: "var(--accent-cyan)",
+  border: "1px solid var(--border-accent)",
   // DESIGN: active accent must emit light, not merely tint background (Circuit Noir)
   boxShadow: "0 0 12px rgba(0, 229, 255, 0.35), inset 0 0 8px rgba(0, 229, 255, 0.1)",
 };
@@ -145,7 +149,7 @@ const BTN_STYLE_ACTIVE = {
 const BTN_STYLE_INACTIVE = {
   ...BTN_BASE,
   background: "transparent",
-  color: "#64748B",
+  color: "var(--text-muted)",
   border: "1px solid transparent",
   boxShadow: "none",
 };
@@ -162,6 +166,9 @@ const LABEL_ACTIVE   = { ...LABEL_BASE, fontWeight: 700 };
 const LABEL_INACTIVE = { ...LABEL_BASE, fontWeight: 500 };
 
 // Badge base — monospace font for numeric data per mono skill
+// TOKEN FIX: color was "#090D14" (hardcoded dark); var(--bg-app) resolves correctly
+// in both themes (very dark in dark mode, very light in light mode is undesirable;
+// both themes have a near-black --bg-app, so this is correct for dark text on bright badge)
 const BADGE_BASE = {
   position: "absolute",
   top: 2,
@@ -172,32 +179,41 @@ const BADGE_BASE = {
   borderRadius: 9999,
   minWidth: 16,
   textAlign: "center",
-  color: "#090D14",
+  color: "var(--bg-app)",
   // DESIGN: monospace for all numeric/count data per mono skill
   fontFamily: "'JetBrains Mono', 'Roboto Mono', monospace",
 };
 
 // Cyan cart badge with neon glow (DESIGN)
+// TOKEN FIX: background was "#00E5FF" → var(--accent-cyan) resolves theme-correctly
 const BADGE_CYAN = {
   ...BADGE_BASE,
-  background: "#00E5FF",
+  background: "var(--accent-cyan)",
   boxShadow: "0 0 6px rgba(0, 229, 255, 0.8)",
 };
 
 // Warning stock-alert badge with warning glow (DESIGN)
 const BADGE_WARNING = {
   ...BADGE_BASE,
-  background: "var(--status-warning, #F59E0B)",
+  background: "var(--status-warning)",
   boxShadow: "0 0 6px rgba(245, 158, 11, 0.8)",
 };
 
+// Critical stock badge — danger red with pulse-red animation applied via className
+const BADGE_CRITICAL = {
+  ...BADGE_BASE,
+  background: "var(--status-danger)",
+  boxShadow: "0 0 6px rgba(239, 68, 68, 0.85)",
+};
+
 // ─── Navigation Component ─────────────────────────────────────────────────────
-// PERF: memo prevents re-renders when activeTab/cartCount/stockAlerts are unchanged
+// PERF: memo prevents re-renders when props are unchanged
 export const Navigation = memo(function Navigation({
   activeTab,
   onTabChange,
-  cartCount   = 0,  // BUG FIX: default 0 — undefined > 0 was silently false; fragile contract
-  stockAlerts = 0,  // BUG FIX: default 0 — same silent false issue
+  cartCount    = 0,     // BUG FIX: default 0 — undefined > 0 was silently false
+  stockAlerts  = 0,     // BUG FIX: default 0 — same silent false issue
+  criticalStock = false, // When true, stock badge turns red and pulses
 }) {
   const { hapticTab } = useHaptic();
 
@@ -222,18 +238,21 @@ export const Navigation = memo(function Navigation({
         // Compute badge info from live props — only this part stays inside render
         let badge          = null;
         let badgeStyle     = null;
+        let badgeClassName = undefined;
         let badgeAriaLabel = null;
 
         if (t.badgeType === "cart" && cartCount > 0) {
-          badge          = cartCount;
+          // UX: cap display at "99+" for three-digit counts — badge stays legible
+          badge          = cartCount >= 100 ? "99+" : cartCount;
           badgeStyle     = BADGE_CYAN;
           badgeAriaLabel = `${cartCount} artículo${cartCount !== 1 ? "s" : ""} en carrito`;
         } else if (t.badgeType === "stock" && stockAlerts > 0) {
           // UX FIX: show numeric count, not '!'; add meaningful aria-label
-          // (was: literal '!' with no count and no aria-label — useless for screen readers)
           badge          = stockAlerts;
-          badgeStyle     = BADGE_WARNING;
-          badgeAriaLabel = `${stockAlerts} alerta${stockAlerts !== 1 ? "s" : ""} de stock`;
+          badgeStyle     = criticalStock ? BADGE_CRITICAL : BADGE_WARNING;
+          // DESIGN: pulse-red class triggers the CSS animation for critical stock
+          badgeClassName = criticalStock ? "pulse-red" : undefined;
+          badgeAriaLabel = `${stockAlerts} alerta${stockAlerts !== 1 ? "s" : ""} de stock${criticalStock ? " crítico" : ""}`;
         }
 
         return (
@@ -257,6 +276,7 @@ export const Navigation = memo(function Navigation({
             {badge !== null && (
               <span
                 style={badgeStyle}
+                className={badgeClassName}
                 aria-label={badgeAriaLabel}
               >
                 {badge}

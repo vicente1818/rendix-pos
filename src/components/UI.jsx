@@ -1,3 +1,62 @@
+import { useState, useCallback, useRef } from "react";
+
+// ─── useToast — ephemeral notification queue ──────────────────────────────────
+// Returns { toasts, toast } where toast(msg, type?, duration?) enqueues a message.
+// Render <ToastContainer toasts={toasts} onRemove={fn} /> at the app root.
+export function useToast() {
+  const [toasts, setToasts] = useState([]);
+  const counter = useRef(0);
+
+  const toast = useCallback((message, type = "info", duration = 3500) => {
+    const id = ++counter.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, duration);
+  }, []);
+
+  const remove = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  return { toasts, toast, remove };
+}
+
+// ─── ToastContainer — render at app root, pass toasts + remove ───────────────
+const TOAST_ICON = { success: "✓", warning: "⚠", danger: "✕", info: "ℹ" };
+
+export function ToastContainer({ toasts = [], onRemove }) {
+  if (!toasts.length) return null;
+  return (
+    <div className="cn-toast-container" role="region" aria-live="polite" aria-label="Notificaciones">
+      {toasts.map(({ id, message, type }) => (
+        <div key={id} className={`cn-toast cn-toast--${type}`}>
+          <span aria-hidden="true" style={{ flexShrink: 0, fontWeight: 700, color: `var(--status-${type === "info" ? "info" : type})` }}>
+            {TOAST_ICON[type] || TOAST_ICON.info}
+          </span>
+          <span style={{ flex: 1 }}>{message}</span>
+          <button
+            onClick={() => onRemove?.(id)}
+            aria-label="Cerrar notificación"
+            style={{
+              background: "none",
+              border: "none",
+              color: "var(--text-muted)",
+              fontSize: 14,
+              cursor: "pointer",
+              flexShrink: 0,
+              minHeight: 44,
+              padding: "0 4px",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Badge({ children, color = "default" }) {
   const m = {
     default: { bg: "var(--bg-surface-elevated)", t: "var(--text-secondary)", border: "var(--border-subtle)" },
@@ -96,7 +155,7 @@ export function Button({ children, variant = "primary", onClick, disabled, fullW
   const styles = {
     primary: {
       background: "linear-gradient(135deg, var(--accent-cyan) 0%, #00B4D8 100%)",
-      color: "#090D14",
+      color: "var(--bg-app)",
       fontWeight: 700,
       boxShadow: "var(--shadow-glow)",
       border: "none"
@@ -122,7 +181,7 @@ export function Button({ children, variant = "primary", onClick, disabled, fullW
   };
 
   const sizes = {
-    sm: { padding: "8px 12px", fontSize: 12, minHeight: 40, borderRadius: "var(--radius-sm)" },
+    sm: { padding: "8px 12px", fontSize: 12, minHeight: 44, borderRadius: "var(--radius-sm)" },
     md: { padding: "12px 18px", fontSize: 13, minHeight: 48, borderRadius: "var(--radius-sm)" },
     lg: { padding: "14px 22px", fontSize: 14, minHeight: 52, borderRadius: "var(--radius-md)" }
   };
@@ -202,7 +261,9 @@ export function SearchInput({ value, onChange, placeholder = "Buscar..." }) {
   );
 }
 
-export function EmptyState({ title = "No hay datos disponibles", description, icon }) {
+export function EmptyState({ title = "No hay datos disponibles", subtitle, description, icon, action }) {
+  // `subtitle` is the canonical prop name; `description` kept for backward-compat
+  const sub = subtitle ?? description;
   return (
     <div style={{
       padding: "36px 20px",
@@ -213,15 +274,20 @@ export function EmptyState({ title = "No hay datos disponibles", description, ic
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      gap: 8
+      gap: "var(--spacing-sm)"
     }}>
       {icon && <div style={{ fontSize: 32, marginBottom: 4 }} aria-hidden="true">{icon}</div>}
       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", fontFamily: "var(--font-heading)" }}>
         {title}
       </div>
-      {description && (
+      {sub && (
         <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 320 }}>
-          {description}
+          {sub}
+        </div>
+      )}
+      {action && (
+        <div style={{ marginTop: "var(--spacing-sm)" }}>
+          {action}
         </div>
       )}
     </div>
