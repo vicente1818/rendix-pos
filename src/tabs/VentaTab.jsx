@@ -22,6 +22,10 @@ const VENTA_TAB_CSS = `
     transform: scale(0.98);
     box-shadow: 0 0 8px rgba(0,229,255,0.2);
   }
+  .product-card-venta:focus-visible {
+    outline: 2px solid var(--accent-cyan, #00E5FF);
+    outline-offset: 2px;
+  }
   .stepper-btn-venta {
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
@@ -79,6 +83,20 @@ const VENTA_TAB_CSS = `
     0%, 100% { text-shadow: 0 0 24px var(--status-success, #00FF88), 0 0 48px rgba(0,255,136,0.4); }
     50%       { text-shadow: 0 0 40px var(--status-success, #00FF88), 0 0 80px rgba(0,255,136,0.6); }
   }
+  .exito-actions-enter {
+    animation: exito-fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes exito-fade-up {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .quick-disc-btn {
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+  .quick-disc-btn:hover {
+    border-color: rgba(0,229,255,0.5) !important;
+    color: var(--accent-cyan) !important;
+  }
 `;
 
 if (typeof document !== "undefined" && !document.getElementById("venta-tab-cn-styles")) {
@@ -97,11 +115,14 @@ const GLASS = {
 };
 const GLOW_CYAN = "0 0 16px rgba(0,229,255,0.4)";
 
+// Quick discount preset values
+const DISC_PRESETS = [0, 5, 10, 15, 20];
+
 export function VentaTab({
   products, onSaleDone, vendedor,
   cart, setCart, descPct, setDescPct,
   canal, setCanal, metodo, setMetodo,
-  cli, setCli
+  cli, setCli, usdRate = null
 }) {
   const [q, setQ] = useState("");
   const [step, setStep] = useState("productos"); // productos | datos | confirmar | exito
@@ -115,6 +136,8 @@ export function VentaTab({
   // UX: Vaciar requires double-tap confirmation
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearConfirmTimer = useRef(null);
+  // UX: animate success screen — actions revealed 1.5s after confirmar
+  const [exitoActionsReady, setExitoActionsReady] = useState(false);
 
   const { hapticAdd, hapticRemove, hapticClear, hapticSuccess } = useHaptic();
 
@@ -144,14 +167,17 @@ export function VentaTab({
   const totalQty  = useMemo(() => cart.reduce((n, i) => n + i.qty, 0), [cart]);
 
   // PERF: stable callback references so product card onClick refs don't churn.
+  // Stock cap: silent no-op when the item is already at max stock.
   const addP = useCallback(p => {
-    scanAudio.playSuccessBeep();
-    hapticAdd();
+    const stockMax = p.stock ?? 1;
     setCart(prev => {
       const ex = prev.find(x => x.sku === p.sku);
-      if (ex) return prev.map(x => x.sku === p.sku ? { ...x, qty: x.qty + 1 } : x);
+      if (ex && ex.qty >= stockMax) return prev; // already at stock limit — silent no-op
+      if (ex) return prev.map(x => x.sku === p.sku ? { ...x, qty: Math.min(stockMax, x.qty + 1) } : x);
       return [...prev, { sku: p.sku, nombre: p.nombre, precio: p.precio, cat: p.cat, qty: 1 }];
     });
+    scanAudio.playSuccessBeep();
+    hapticAdd();
   }, [hapticAdd, setCart]);
 
   const delP = useCallback(sku => {
@@ -159,10 +185,15 @@ export function VentaTab({
     setCart(prev => prev.filter(x => x.sku !== sku));
   }, [hapticRemove, setCart]);
 
+  // Stock cap: clamp qty between 1 and the live stock ceiling.
   const updQ = useCallback((sku, d) => {
     hapticAdd();
-    setCart(prev => prev.map(x => x.sku === sku ? { ...x, qty: Math.max(1, x.qty + d) } : x));
-  }, [hapticAdd, setCart]);
+    setCart(prev => prev.map(x => {
+      if (x.sku !== sku) return x;
+      const stockMax = products.find(p => p.sku === sku)?.stock ?? 1;
+      return { ...x, qty: Math.max(1, Math.min(stockMax, x.qty + d)) };
+    }));
+  }, [hapticAdd, setCart, products]);
 
   const clear = () => {
     hapticClear();
@@ -174,6 +205,7 @@ export function VentaTab({
     setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
     setSyncError(null);
     setMpQrOrderId(null);
+    setExitoActionsReady(false);
     setStep("productos");
   };
 
@@ -199,7 +231,20 @@ export function VentaTab({
   // BUG FIX: try/catch/finally so setSaving(false) always runs.
   // Sheets sync failure is non-fatal: sale is still recorded locally.
   // Accepts overrideId so the Mercado Pago QR venta.id matches posOrderId.
+  // Stock guard: aborts if any cart item qty exceeds current product stock.
   const confirmar = async (overrideId = null) => {
+    // Stock validation — abort before any side-effects if stock is insufficient
+    const stockErrors = cart.filter(ci => {
+      const p = products.find(pr => pr.sku === ci.sku);
+      return p && ci.qty > p.stock;
+    });
+    if (stockErrors.length > 0) {
+      setSyncError(
+        `Stock insuficiente: ${stockErrors.map(e => e.nombre).join(", ")}. Reducí la cantidad antes de confirmar.`
+      );
+      return;
+    }
+
     setSaving(true);
     setSyncError(null);
     try {
@@ -227,6 +272,8 @@ export function VentaTab({
       await onSaleDone(venta, updProds);
       hapticSuccess();
       setStep("exito");
+      // Reveal action buttons after a 1.5s animated success moment
+      setTimeout(() => setExitoActionsReady(true), 1500);
     } catch (err) {
       console.error("Error al confirmar venta:", err);
       setSyncError("Error al confirmar la venta. Por favor intente de nuevo.");
@@ -279,15 +326,24 @@ export function VentaTab({
         </div>
       </div>
 
-      <SectionCard title="Acciones de comprobante" style={{ ...GLASS }}>
-        <Button variant="primary" fullWidth size="lg" onClick={handleShareWhatsAppReceipt}
-          style={{ marginBottom: 8, boxShadow: GLOW_CYAN }}>
-          📲 Enviar Ticket por WhatsApp
-        </Button>
-        <Button variant="secondary" fullWidth size="md" onClick={() => { setLastCompletedSale(null); clear(); }}>
-          ➕ Nueva Venta
-        </Button>
-      </SectionCard>
+      {/* UX: action buttons reveal after a 1.5s success animation window */}
+      {exitoActionsReady ? (
+        <div className="exito-actions-enter">
+          <SectionCard title="Acciones de comprobante" style={{ ...GLASS }}>
+            <Button variant="primary" fullWidth size="lg" onClick={handleShareWhatsAppReceipt}
+              style={{ marginBottom: 8, boxShadow: GLOW_CYAN }}>
+              📲 Enviar Ticket por WhatsApp
+            </Button>
+            <Button variant="secondary" fullWidth size="md" onClick={() => { setLastCompletedSale(null); clear(); }}>
+              ➕ Nueva Venta
+            </Button>
+          </SectionCard>
+        </div>
+      ) : (
+        <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: 18, letterSpacing: "0.15em", fontFamily: MONO }}>
+          · · ·
+        </div>
+      )}
     </div>
   );
 
@@ -313,9 +369,17 @@ export function VentaTab({
             <span>−{fmt(descMonto)}</span>
           </div>
         )}
+        {/* Dual-currency total: ARS primary, USD secondary when usdRate is available */}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16, fontFamily: MONO }} className="tabular-nums">
           <span>TOTAL</span>
-          <span style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.5)" }}>{fmt(total)}</span>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.5)" }}>{fmt(total)}</div>
+            {usdRate && usdRate > 0 && (
+              <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", marginTop: 2 }}>
+                ≈ USD {(total / usdRate).toFixed(2)}
+              </div>
+            )}
+          </div>
         </div>
       </SectionCard>
 
@@ -408,8 +472,32 @@ export function VentaTab({
         <div style={{ marginTop: 16 }}>
           {/* UX: label linked via htmlFor; slider has aria-label for screen readers */}
           <label htmlFor="vt-descuento" style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            Descuento global (%)
+            Descuento rápido (%)
           </label>
+          {/* Descuento rápido: one-tap preset buttons — no need to drag the slider */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            {DISC_PRESETS.map(pct => (
+              <button
+                key={pct}
+                onClick={() => setDescPct(pct)}
+                className="quick-disc-btn"
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontFamily: MONO,
+                  fontWeight: 700,
+                  borderRadius: 2,
+                  cursor: "pointer",
+                  minHeight: 36,
+                  border: `1px solid ${descPct === pct ? "var(--accent-cyan)" : "var(--border-subtle)"}`,
+                  background: descPct === pct ? "rgba(0,229,255,0.12)" : "var(--bg-surface)",
+                  color: descPct === pct ? "var(--accent-cyan)" : "var(--text-muted)",
+                }}
+              >
+                {pct === 0 ? "Sin dto" : `${pct}%`}
+              </button>
+            ))}
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             <input
               type="range"
@@ -434,15 +522,15 @@ export function VentaTab({
 
       <SectionCard title="Información del cliente" style={{ ...GLASS }}>
         {[
-          ["nombre", "Nombre completo",              "text"],
-          ["tel",    "Tel / WhatsApp (con código área)", "tel"],
-          ["ig",     "Instagram @handle",             "text"],
-          ["ciudad", "Ciudad",                        "text"],
-          ["notas",  "Notas adicionales",             "text"],
+          ["nombre", "Nombre completo",                      "text"],
+          ["tel",    "WhatsApp Argentina: 549XXXXXXXXXX",    "tel"],
+          ["ig",     "Instagram @handle",                    "text"],
+          ["ciudad", "Ciudad",                               "text"],
+          ["notas",  "Notas adicionales",                    "text"],
         ].map(([k, l, t]) => (
           <div key={k} style={{ marginBottom: 8 }}>
             <label htmlFor={`vt-cli-${k}`} style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              {l}
+              {k === "tel" ? "Tel / WhatsApp" : l}
             </label>
             {/* DESIGN: dark-themed input with focus glow */}
             <input
@@ -482,6 +570,22 @@ export function VentaTab({
         )}
       </div>
 
+      {/* UX: empty cart CTA — visible prompt when no items yet and products are available */}
+      {cart.length === 0 && filtered.length > 0 && (
+        <div style={{
+          textAlign: "center",
+          padding: "12px 16px",
+          background: "rgba(0,229,255,0.03)",
+          border: "1px dashed rgba(0,229,255,0.18)",
+          borderRadius: 4,
+          fontSize: 13,
+          color: "var(--text-muted)",
+          letterSpacing: "0.01em",
+        }}>
+          Tocá un producto para agregarlo al carrito
+        </div>
+      )}
+
       {cart.length > 0 && (
         <SectionCard style={{
           ...GLASS,
@@ -512,6 +616,8 @@ export function VentaTab({
 
           {cart.map(i => {
             const isMin = i.qty === 1;
+            const stockMax = products.find(p => p.sku === i.sku)?.stock ?? Infinity;
+            const isMax = isFinite(stockMax) && i.qty >= stockMax;
             return (
               <div key={i.sku} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 13 }}>
                 <span style={{ flex: 1, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -537,20 +643,36 @@ export function VentaTab({
                 <span style={{ fontWeight: 700, minWidth: 28, textAlign: "center", fontFamily: MONO }} className="tabular-nums">
                   {i.qty}
                 </span>
+                {/* UX: + is visually disabled and shows warning at stock ceiling */}
                 <button
-                  onClick={() => updQ(i.sku, 1)}
-                  title="Aumentar cantidad"
+                  onClick={() => !isMax && updQ(i.sku, 1)}
+                  aria-disabled={isMax ? "true" : "false"}
+                  title={isMax ? `Stock máximo alcanzado (${stockMax} unidades)` : "Aumentar cantidad"}
                   className="touch-target-48 tactile-btn stepper-btn-venta"
                   style={{
                     background: "var(--bg-surface)",
-                    border: "1px solid var(--border-subtle)",
+                    border: `1px solid ${isMax ? "rgba(251,191,36,0.5)" : "var(--border-subtle)"}`,
                     borderRadius: 2,
-                    color: "var(--text-primary)",
+                    color: isMax ? "var(--status-warning)" : "var(--text-primary)",
                     fontWeight: 700, fontSize: 16,
                     minWidth: 32, minHeight: 44,
-                    cursor: "pointer",
+                    cursor: isMax ? "not-allowed" : "pointer",
+                    opacity: isMax ? 0.5 : 1,
                   }}
                 >+</button>
+                {/* Visual MAX badge when at stock ceiling */}
+                {isMax && (
+                  <span style={{
+                    fontSize: 9, fontWeight: 800, fontFamily: MONO,
+                    color: "var(--status-warning)",
+                    background: "rgba(251,191,36,0.12)",
+                    border: "1px solid rgba(251,191,36,0.3)",
+                    borderRadius: 2, padding: "1px 4px",
+                    letterSpacing: "0.04em",
+                  }}>
+                    MAX
+                  </span>
+                )}
                 <span style={{ minWidth: 72, textAlign: "right", fontWeight: 700, color: "var(--accent-cyan)", fontFamily: MONO }} className="tabular-nums">
                   {fmt(i.precio * i.qty)}
                 </span>
@@ -593,12 +715,17 @@ export function VentaTab({
 
       {/* DESIGN: glassmorphism cards, hover/active glow via CSS class,
           sharp 2px radius (futuristic spec), monospace SKU/price data.
-          PERF: images pre-resolved in filteredWithImages (not per-render). */}
+          PERF: images pre-resolved in filteredWithImages (not per-render).
+          A11Y: role=button + tabIndex + onKeyDown — fully keyboard navigable. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {filteredWithImages.map(p => (
           <div
             key={p.sku}
+            role="button"
+            tabIndex={0}
             onClick={() => addP(p)}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addP(p); } }}
+            aria-label={`Agregar ${p.nombre} al carrito — ${fmt(p.precio)}`}
             className="tactile-btn product-card-venta"
             style={{
               ...GLASS,

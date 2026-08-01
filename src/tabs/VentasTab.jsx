@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, memo } from "react";
 import { CANALES, fmt, fmtD } from "../utils/constants.js";
-import { SectionCard, MetricCard, Badge, EmptyState } from "../components/UI.jsx";
+import { SectionCard, MetricCard, Badge, EmptyState, SearchInput } from "../components/UI.jsx";
 
 // ─── Pre-defined button style constants (avoid per-render object creation) ───
 const BTN_BASE = {
@@ -34,8 +34,33 @@ const BTN_INACTIVE = {
   boxShadow: "none",
 };
 
+const BTN_QUICK = {
+  ...BTN_BASE,
+  padding: "6px 10px",
+  fontSize: 11,
+  minHeight: 32,
+  border: "1px solid var(--border-subtle)",
+  background: "var(--bg-surface)",
+  color: "var(--text-muted)",
+};
+
+const BTN_ACTION_BASE = {
+  padding: "6px 12px",
+  fontSize: 11,
+  fontWeight: 600,
+  borderRadius: "var(--radius-sm)",
+  cursor: "pointer",
+  minHeight: 32,
+  fontFamily: 'var(--font-mono, "Space Mono", monospace)',
+  border: "none",
+  transition: "all 0.15s ease",
+};
+
 // ─── Mono font shorthand ──────────────────────────────────────────────────────
 const MONO = 'var(--font-mono, "JetBrains Mono", monospace)';
+
+// ─── Records per page ─────────────────────────────────────────────────────────
+const PAGE = 50;
 
 // ─── Chevron expand indicator ─────────────────────────────────────────────────
 function ChevronIcon({ expanded }) {
@@ -95,8 +120,16 @@ function SkeletonCard({ delay = 0 }) {
   );
 }
 
+// ─── Estado badge colour mapping ──────────────────────────────────────────────
+function estadoBadgeColor(estado) {
+  if (!estado || estado === "Confirmado") return "success";
+  if (estado === "Devuelto") return "danger";
+  if (estado === "Cancelado") return "warning";
+  return "default";
+}
+
 // ─── Memoised individual sale card ───────────────────────────────────────────
-const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle }) {
+const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale }) {
   // Stable click handler per card — onToggle itself is stable from parent useCallback
   const handleClick = useCallback(() => onToggle(v.id), [onToggle, v.id]);
 
@@ -107,6 +140,8 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle }) {
       : v.descPct > 0 && v.total > 0
       ? Math.round((v.total * v.descPct) / (100 - v.descPct))
       : 0;
+
+  const estado = v.estado || "Confirmado";
 
   return (
     <SectionCard
@@ -170,7 +205,11 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle }) {
             >
               {fmt(v.total)}
             </div>
-            <Badge color="info">{v.canal}</Badge>
+            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 2 }}>
+              <Badge color="info">{v.canal}</Badge>
+              {/* Status badge — only shown when not default Confirmado, or always */}
+              <Badge color={estadoBadgeColor(estado)}>{estado}</Badge>
+            </div>
           </div>
           {/* Expand/collapse chevron */}
           <ChevronIcon expanded={isExpanded} />
@@ -267,6 +306,54 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle }) {
               NOTA: {v.cli.notas}
             </div>
           )}
+
+          {/* Return / cancel action row — only shown when onUpdateSale is wired */}
+          {onUpdateSale && (
+            <div
+              style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}
+              onClick={e => e.stopPropagation()} // prevent card collapse on action clicks
+            >
+              {estado !== "Devuelto" && (
+                <button
+                  style={{
+                    ...BTN_ACTION_BASE,
+                    background: "rgba(239,68,68,0.1)",
+                    color: "var(--status-danger)",
+                    border: "1px solid rgba(239,68,68,0.3)",
+                  }}
+                  onClick={() => onUpdateSale(v.id, { estado: "Devuelto" })}
+                >
+                  Marcar como devuelta
+                </button>
+              )}
+              {estado !== "Cancelado" && estado !== "Devuelto" && (
+                <button
+                  style={{
+                    ...BTN_ACTION_BASE,
+                    background: "rgba(251,191,36,0.08)",
+                    color: "var(--status-warning)",
+                    border: "1px solid rgba(251,191,36,0.3)",
+                  }}
+                  onClick={() => onUpdateSale(v.id, { estado: "Cancelado" })}
+                >
+                  Cancelar venta
+                </button>
+              )}
+              {(estado === "Devuelto" || estado === "Cancelado") && (
+                <button
+                  style={{
+                    ...BTN_ACTION_BASE,
+                    background: "rgba(0,255,136,0.08)",
+                    color: "var(--status-success)",
+                    border: "1px solid rgba(0,255,136,0.2)",
+                  }}
+                  onClick={() => onUpdateSale(v.id, { estado: "Confirmado" })}
+                >
+                  Restaurar a Confirmado
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </SectionCard>
@@ -274,26 +361,94 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle }) {
 });
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function VentasTab({ sales = [], loading = false }) {
+export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
   const [canal, setCanal] = useState("Todos");
   const [exp, setExp] = useState(null);
+  // Text search
+  const [q, setQ] = useState("");
+  // Date range filters
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  // Pagination
+  const [page, setPage] = useState(0);
+
+  // Quick date range helpers
+  const setToday = useCallback(() => {
+    const today = new Date().toISOString().split("T")[0];
+    setDateFrom(today); setDateTo(today); setPage(0);
+  }, []);
+
+  const setThisWeek = useCallback(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    setDateFrom(monday.toISOString().split("T")[0]);
+    setDateTo(now.toISOString().split("T")[0]);
+    setPage(0);
+  }, []);
+
+  const setThisMonth = useCallback(() => {
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    setDateFrom(first.toISOString().split("T")[0]);
+    setDateTo(now.toISOString().split("T")[0]);
+    setPage(0);
+  }, []);
+
+  const clearDates = useCallback(() => {
+    setDateFrom(""); setDateTo(""); setPage(0);
+  }, []);
 
   // Memoised filtering + newest-first sort
-  const filtered = useMemo(
-    () =>
-      (canal === "Todos" ? sales : sales.filter(s => s.canal === canal))
-        .slice()
-        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha)),
-    [sales, canal]
-  );
+  // Includes: canal, full-text search on name/ID/vendor, date range
+  const filtered = useMemo(() => {
+    const lq = q.trim().toLowerCase();
+    return (canal === "Todos" ? sales : sales.filter(s => s.canal === canal))
+      .filter(s => {
+        // Text search
+        if (lq) {
+          const haystack = [s.cli?.nombre || "", s.id || "", s.vendedor || ""]
+            .join(" ").toLowerCase();
+          if (!haystack.includes(lq)) return false;
+        }
+        // Date range
+        if (dateFrom || dateTo) {
+          const d = new Date(s.fecha);
+          if (dateFrom && d < new Date(dateFrom)) return false;
+          if (dateTo && d > new Date(dateTo + "T23:59:59")) return false;
+        }
+        return true;
+      })
+      .slice()
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  }, [sales, canal, q, dateFrom, dateTo]);
 
   // Memoised total — depends only on filtered
-  const tot = useMemo(() => filtered.reduce((s, v) => s + v.total, 0), [filtered]);
+  const tot = useMemo(() => filtered.reduce((s, v) => s + (v.total || 0), 0), [filtered]);
+
+  // Pagination
+  const pageCount = Math.ceil(filtered.length / PAGE);
+  const paginated = useMemo(
+    () => filtered.slice(page * PAGE, (page + 1) * PAGE),
+    [filtered, page]
+  );
 
   // Stable toggle handler — functional updater avoids closing over `exp`
   const toggleCard = useCallback((id) => {
     setExp(prev => (prev === id ? null : id));
   }, []);
+
+  // Reset to page 0 whenever filter changes (canal/q/dates already call setPage(0) inline)
+  // Canal change also resets page
+  const handleCanalChange = useCallback((c) => {
+    setCanal(c); setPage(0);
+  }, []);
+  const handleQChange = useCallback((val) => {
+    setQ(val); setPage(0);
+  }, []);
+
+  const hasDateFilter = Boolean(dateFrom || dateTo);
 
   return (
     <>
@@ -301,13 +456,66 @@ export function VentasTab({ sales = [], loading = false }) {
       <style>{`@keyframes cn-pulse{0%,100%{opacity:1}50%{opacity:0.35}}`}</style>
 
       <div
-        style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}
+        style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}
         className="animate-fade-in"
       >
+        {/* ── Text search ── */}
+        <SearchInput
+          value={q}
+          onChange={handleQChange}
+          placeholder="Buscar por cliente, ID de venta, vendedor..."
+        />
+
+        {/* ── Date range filter ── */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* Quick date shortcuts */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <button onClick={setToday} style={{ ...BTN_QUICK, color: hasDateFilter ? "var(--text-muted)" : undefined }}>Hoy</button>
+            <button onClick={setThisWeek} style={BTN_QUICK}>Esta semana</button>
+            <button onClick={setThisMonth} style={BTN_QUICK}>Este mes</button>
+            {hasDateFilter && (
+              <button
+                onClick={clearDates}
+                style={{ ...BTN_QUICK, color: "var(--status-danger)", borderColor: "rgba(239,68,68,0.3)" }}
+              >
+                Limpiar fechas ✕
+              </button>
+            )}
+          </div>
+          {/* Date pickers */}
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={e => { setDateFrom(e.target.value); setPage(0); }}
+              aria-label="Desde"
+              style={{
+                flex: 1, padding: "6px 10px", fontSize: 12, minHeight: 36,
+                background: "var(--bg-surface)", color: "var(--text-primary)",
+                border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)",
+                outline: "none",
+              }}
+            />
+            <span style={{ fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>→</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={e => { setDateTo(e.target.value); setPage(0); }}
+              aria-label="Hasta"
+              style={{
+                flex: 1, padding: "6px 10px", fontSize: 12, minHeight: 36,
+                background: "var(--bg-surface)", color: "var(--text-primary)",
+                border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-sm)",
+                outline: "none",
+              }}
+            />
+          </div>
+        </div>
+
         {/* ── Channel filter strip ── */}
         <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
           {["Todos", ...CANALES].map(c => (
-            <button key={c} onClick={() => setCanal(c)} style={canal === c ? BTN_ACTIVE : BTN_INACTIVE}>
+            <button key={c} onClick={() => handleCanalChange(c)} style={canal === c ? BTN_ACTIVE : BTN_INACTIVE}>
               {c}
             </button>
           ))}
@@ -349,24 +557,72 @@ export function VentasTab({ sales = [], loading = false }) {
         {/* ── Empty state ── */}
         {!loading && filtered.length === 0 && (
           <EmptyState
-            title="Sin ventas en este canal"
-            description="Seleccioná otro canal o registrá una venta."
+            title="Sin ventas"
+            description={q || hasDateFilter ? "Ninguna venta coincide con los filtros activos." : "Seleccioná otro canal o registrá una venta."}
             icon="📭"
           />
         )}
 
-        {/* ── Sale card list ── */}
+        {/* ── Sale card list (paginated) ── */}
         {!loading && filtered.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {filtered.map(v => (
-              <SaleCard
-                key={v.id}
-                v={v}
-                isExpanded={exp === v.id}
-                onToggle={toggleCard}
-              />
-            ))}
-          </div>
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {paginated.map(v => (
+                <SaleCard
+                  key={v.id}
+                  v={v}
+                  isExpanded={exp === v.id}
+                  onToggle={toggleCard}
+                  onUpdateSale={onUpdateSale}
+                />
+              ))}
+            </div>
+
+            {/* ── Pagination controls ── */}
+            {pageCount > 1 && (
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 8, paddingTop: 8,
+              }}>
+                <button
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  style={{
+                    ...BTN_BASE,
+                    padding: "8px 16px",
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--bg-surface)",
+                    color: page === 0 ? "var(--text-muted)" : "var(--text-primary)",
+                    opacity: page === 0 ? 0.4 : 1,
+                    cursor: page === 0 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  ← Anterior
+                </button>
+                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: MONO, minWidth: 64, textAlign: "center" }}>
+                  {page + 1} / {pageCount}
+                </span>
+                <button
+                  onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+                  disabled={page >= pageCount - 1}
+                  style={{
+                    ...BTN_BASE,
+                    padding: "8px 16px",
+                    border: "1px solid var(--border-subtle)",
+                    background: "var(--bg-surface)",
+                    color: page >= pageCount - 1 ? "var(--text-muted)" : "var(--text-primary)",
+                    opacity: page >= pageCount - 1 ? 0.4 : 1,
+                    cursor: page >= pageCount - 1 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Siguiente →
+                </button>
+              </div>
+            )}
+            <div style={{ textAlign: "center", fontSize: 11, color: "var(--text-muted)", fontFamily: MONO }}>
+              {filtered.length} {filtered.length === 1 ? "venta" : "ventas"} · mostrando {paginated.length}
+            </div>
+          </>
         )}
       </div>
     </>

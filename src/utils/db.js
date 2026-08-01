@@ -44,6 +44,11 @@ export async function saveDbSale(sale) {
   return await db.sales.add(sale);
 }
 
+// Upsert — used for updating estado (devolucion, cancelacion) on an existing sale.
+export async function putDbSale(sale) {
+  return await db.sales.put(sale);
+}
+
 export async function getDbConfig(key, defaultValue = null) {
   const item = await db.config.get(key);
   return item ? item.value : defaultValue;

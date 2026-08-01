@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { initDatabase, getDbProducts, saveDbProducts, getDbSales, saveDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
+import { initDatabase, getDbProducts, saveDbProducts, getDbSales, saveDbSale, putDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
 import { setSheetsUrl } from "./utils/sheets.js";
 import { autoFixProductImages } from "./utils/imageMatcher.js";
 import { setApiLayerKeys, getUsdToArs } from "./utils/apilayer.js";
@@ -69,6 +69,16 @@ export default function App() {
     setCart([]);
     setDescPct(0);
     setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
+  };
+
+  const handleUpdateSale = (id, update) => {
+    setSales(prev => {
+      const updated = prev.map(s => s.id === id ? { ...s, ...update } : s);
+      // Persist the mutation via upsert so the updated estado survives reload.
+      const target = updated.find(s => s.id === id);
+      if (target) putDbSale(target).catch(console.error);
+      return updated;
+    });
   };
 
   const updateProductsState = async (newProducts) => {
@@ -156,13 +166,14 @@ export default function App() {
             setMetodo={setMetodo}
             cli={cli}
             setCli={setCli}
+            usdRate={usdRate}
           />
         )}
         {activeTab === "catalogo" && (
           <CatalogoTab products={products} onUpdate={updateProductsState} />
         )}
         {activeTab === "ventas" && (
-          <VentasTab sales={sales} />
+          <VentasTab sales={sales} onUpdateSale={handleUpdateSale} />
         )}
         {activeTab === "clientes" && (
           <ClientesTab sales={sales} />
