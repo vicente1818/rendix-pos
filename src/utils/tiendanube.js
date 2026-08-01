@@ -1,5 +1,11 @@
 export function fileToDataURL(file) {
   return new Promise((res, rej) => {
+    // FINDING #4 fix: reject non-image MIME types before reading — accept="image/*"
+    // is a browser hint only; a user can bypass it and select any file type.
+    if (!file.type.startsWith("image/")) {
+      rej(new Error("Solo se permiten archivos de imagen (jpg, png, webp, etc.)"));
+      return;
+    }
     if (file.size > 1.5 * 1024 * 1024) {
       rej(new Error("La imagen no puede superar 1.5 MB"));
       return;
