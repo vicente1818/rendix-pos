@@ -4,6 +4,29 @@ import { SectionCard, SearchInput, Badge, EmptyState } from "../components/UI.js
 
 const MONO = "'JetBrains Mono', 'Space Mono', monospace";
 
+// Short date helper: shows DD/MM/YY — compact enough for the right-panel column
+const fmtShortDate = d => {
+  try {
+    return new Date(d).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  } catch {
+    return "--";
+  }
+};
+
+/**
+ * Normalise an Argentine phone number to the E.164 wa.me format (no + sign).
+ * Mirrors the logic in whatsapp.js — kept local to avoid a cross-util import.
+ * 549 + [area] + [subscriber] = WhatsApp international format for Argentina.
+ */
+function formatPhoneWA(rawPhone) {
+  const digits = (rawPhone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("549") && digits.length >= 12) return digits;
+  if (digits.startsWith("54")) return "549" + digits.slice(2);
+  const local = digits.startsWith("0") ? digits.slice(1) : digits;
+  return "549" + local;
+}
+
 // ── Static style constants ────────────────────────────────────────────────────
 // Defined outside the component so React never re-creates these object literals
 // on re-renders.
@@ -258,19 +281,35 @@ export function ClientesTab({ sales = [] }) {
       if (!clMap[key]) {
         clMap[key] = {
           key,
-          nombre:  s.cli?.nombre  || "Cliente sin nombre",
-          tel:     s.cli?.tel     || "",
-          ig:      s.cli?.ig      || "",
-          ciudad:  s.cli?.ciudad  || "",
-          ventas:  [],
-          total:   0,
+          nombre:    s.cli?.nombre  || "Cliente sin nombre",
+          tel:       s.cli?.tel     || "",
+          ig:        s.cli?.ig      || "",
+          ciudad:    s.cli?.ciudad  || "",
+          ventas:    [],
+          total:     0,
+          lastFecha: null,
         };
       }
       clMap[key].ventas.push(s);
       clMap[key].total += s.total;
+      // Track most recent sale date
+      if (s.fecha) {
+        const ts = new Date(s.fecha).getTime();
+        if (!clMap[key].lastFecha || ts > new Date(clMap[key].lastFecha).getTime()) {
+          clMap[key].lastFecha = s.fecha;
+        }
+      }
     });
 
     const all = Object.values(clMap);
+
+    // ── VIP: top 20% of all clients by lifetime spend ────────────────────────
+    // Computed on the full un-sorted set so the badge is spend-based regardless
+    // of the active sort key.
+    const byTotal = [...all].sort((a, b) => b.total - a.total);
+    const vipCount = Math.max(1, Math.ceil(byTotal.length * 0.2));
+    const vipSet = new Set(byTotal.slice(0, vipCount).map(c => c.key));
+    all.forEach(c => { c.isVIP = vipSet.has(c.key); });
 
     switch (sortKey) {
       case "compras":
@@ -374,7 +413,30 @@ export function ClientesTab({ sales = [] }) {
                   </div>
 
                   <div style={{ minWidth: 0 }}>
-                    <div style={S.clientName}>{c.nombre}</div>
+                    {/* Client name + VIP badge on the same line */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+                      <div style={S.clientName}>{c.nombre}</div>
+                      {c.isVIP && (
+                        <span
+                          title="Cliente VIP: top 20% por gasto"
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            fontFamily: MONO,
+                            letterSpacing: "0.06em",
+                            padding: "1px 5px",
+                            borderRadius: 2,
+                            background: "rgba(251,191,36,0.12)",
+                            border: "1px solid rgba(251,191,36,0.45)",
+                            color: "#fbbf24",
+                            flexShrink: 0,
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          VIP
+                        </span>
+                      )}
+                    </div>
                     {/* Contact line with explicit WA:/@ label */}
                     <ContactBadge tel={c.tel} ig={c.ig} />
                     {c.ciudad && (
@@ -385,8 +447,34 @@ export function ClientesTab({ sales = [] }) {
                   </div>
                 </div>
 
-                {/* Spend total + purchase count + expand chevron */}
+                {/* Spend total + purchase count + last date + WA button + expand chevron */}
                 <div style={S.rightPanel}>
+                  {/* WhatsApp quick contact — stopPropagation keeps the card from toggling */}
+                  {c.tel && (
+                    <a
+                      href={`https://wa.me/${formatPhoneWA(c.tel)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={e => e.stopPropagation()}
+                      title={`Contactar a ${c.nombre} por WhatsApp`}
+                      style={{
+                        padding: "4px 8px",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        fontFamily: MONO,
+                        borderRadius: 2,
+                        background: "rgba(37,211,102,0.10)",
+                        border: "1px solid rgba(37,211,102,0.30)",
+                        color: "#25D366",
+                        textDecoration: "none",
+                        flexShrink: 0,
+                        lineHeight: 1.6,
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      WA
+                    </a>
+                  )}
                   <div style={S.rightText}>
                     {/* tabular-nums prevents digit-width jitter as amounts vary */}
                     <div style={S.totalAmount} className="tabular-nums">
@@ -395,6 +483,12 @@ export function ClientesTab({ sales = [] }) {
                     <div style={S.purchaseCount}>
                       {c.ventas.length} compra{c.ventas.length !== 1 ? "s" : ""}
                     </div>
+                    {/* Última compra date — shows most recent purchase in compact form */}
+                    {c.lastFecha && (
+                      <div style={{ ...S.purchaseCount, fontSize: 10, color: "var(--text-muted)", opacity: 0.8 }}>
+                        últ. {fmtShortDate(c.lastFecha)}
+                      </div>
+                    )}
                   </div>
                   {/* Chevron gives first-time users a clear interactive affordance */}
                   <ChevronIcon expanded={isExpanded} />

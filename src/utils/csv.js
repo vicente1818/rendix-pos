@@ -1,5 +1,7 @@
 export function downloadCSV(rows, filename) {
-  const csv = "\ufeff" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  // RFC 4180: use CRLF line endings; wrap every field in quotes; double internal quotes.
+  // Embedded newlines inside a field are also allowed by RFC 4180 since the field is quoted.
+  const csv = "\ufeff" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
   Object.assign(document.createElement("a"), { href: url, download: filename }).click();
   URL.revokeObjectURL(url);

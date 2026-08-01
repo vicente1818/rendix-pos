@@ -3,10 +3,24 @@ import { useEffect, useRef } from "react";
 /**
  * Global Barcode Scanner Listener Hook for HID USB & Bluetooth Scanners
  * Intercepts rapid key sequences (< 40ms inter-character latency)
+ *
+ * Memory-leak fix: onScan is stored in a ref so the event-listener effect only
+ * re-runs when `enabled` changes, not on every parent render that produces a new
+ * onScan function reference. The ref keeps the callback current without
+ * re-registering the listener on the global window object.
  */
 export function useBarcodeScanner({ onScan, enabled = true }) {
   const bufferRef = useRef("");
   const lastKeyTimeRef = useRef(Date.now());
+  // Stable ref for the callback — avoids adding onScan to the effect deps which
+  // would cause the listener to be removed + re-added on every parent re-render.
+  const onScanRef = useRef(onScan);
+
+  // Keep the ref pointing to the latest version of onScan without triggering
+  // listener re-registration.
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -24,7 +38,7 @@ export function useBarcodeScanner({ onScan, enabled = true }) {
 
       if (e.key === "Enter") {
         if (bufferRef.current.length >= 3) {
-          onScan(bufferRef.current);
+          onScanRef.current(bufferRef.current);
           bufferRef.current = "";
           e.preventDefault();
         }
@@ -42,6 +56,8 @@ export function useBarcodeScanner({ onScan, enabled = true }) {
     };
 
     window.addEventListener("keydown", handleKeyDown);
+    // Cleanup removes the listener when enabled toggles or the component unmounts,
+    // preventing the event handler from persisting beyond the component's lifetime.
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onScan, enabled]);
+  }, [enabled]); // onScan intentionally omitted — tracked via onScanRef above
 }

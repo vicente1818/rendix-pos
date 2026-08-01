@@ -59,6 +59,17 @@ const BTN_ACTION_BASE = {
 // ─── Mono font shorthand ──────────────────────────────────────────────────────
 const MONO = 'var(--font-mono, "JetBrains Mono", monospace)';
 
+// ─── Payment method icon lookup ───────────────────────────────────────────────
+function metodoIcon(metodo) {
+  if (!metodo) return "";
+  const m = metodo.toLowerCase();
+  if (m.includes("tarjeta")) return "💳";
+  if (m.includes("mercado") || m.includes("mp")) return "📱";
+  if (m.includes("efectivo")) return "💵";
+  if (m.includes("transfer")) return "🏦";
+  return "💳";
+}
+
 // ─── Records per page ─────────────────────────────────────────────────────────
 const PAGE = 50;
 
@@ -176,7 +187,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
           >
             {v.cli?.nombre || "Sin cliente"}
           </div>
-          {/* Sale ID + date + vendor — secondary monospace label */}
+          {/* Sale ID + date + vendor + payment method icon — secondary monospace label */}
           <div
             style={{
               fontSize: 10,
@@ -187,6 +198,14 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
             }}
           >
             {v.id} · {fmtD(v.fecha)} · {v.vendedor || "Sin vendedor"}
+            {v.metodo ? (
+              <>
+                {" · "}
+                <span title={v.metodo} aria-label={v.metodo}>
+                  {metodoIcon(v.metodo)}
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -299,7 +318,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
           )}
 
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6, fontFamily: MONO }}>
-            PAGO: {v.metodo}
+            PAGO: {metodoIcon(v.metodo)} {v.metodo}
           </div>
           {v.cli?.notas && (
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
@@ -406,9 +425,10 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
     const lq = q.trim().toLowerCase();
     return (canal === "Todos" ? sales : sales.filter(s => s.canal === canal))
       .filter(s => {
-        // Text search
+        // Text search — client name, sale ID, vendor, and all product names in items
         if (lq) {
-          const haystack = [s.cli?.nombre || "", s.id || "", s.vendedor || ""]
+          const productNames = (s.items || []).map(i => i.nombre || "").join(" ");
+          const haystack = [s.cli?.nombre || "", s.id || "", s.vendedor || "", productNames]
             .join(" ").toLowerCase();
           if (!haystack.includes(lq)) return false;
         }
@@ -463,7 +483,7 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
         <SearchInput
           value={q}
           onChange={handleQChange}
-          placeholder="Buscar por cliente, ID de venta, vendedor..."
+          placeholder="Buscar por cliente, producto, ID de venta, vendedor..."
         />
 
         {/* ── Date range filter ── */}
