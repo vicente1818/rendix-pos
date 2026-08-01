@@ -70,3 +70,76 @@ export function ChannelDistributionBar({ channels }) {
     </div>
   );
 }
+
+/**
+ * HourlyChart — 24-bar mini chart of revenue/count by hour of day.
+ * `data` must be a 24-element array (index = hour 0–23, value = revenue or count).
+ * The peak bar is highlighted with full color; others are at 40% opacity.
+ */
+export function HourlyChart({ data = [], color = "var(--accent-cyan)" }) {
+  if (!Array.isArray(data) || data.length !== 24) return null;
+
+  const max      = Math.max(...data, 1);
+  const peakHour = data.indexOf(Math.max(...data));
+  const hasData  = data.some(v => v > 0);
+
+  if (!hasData) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Bar chart */}
+      <div style={{
+        display: "flex",
+        alignItems: "flex-end",
+        gap: 2,
+        height: 56,
+      }}>
+        {data.map((val, h) => {
+          const pct     = val / max;
+          const isPeak  = h === peakHour && val > 0;
+          const barH    = val > 0 ? Math.max(pct * 100, 8) : 2; // floor 2% for zero bars
+
+          return (
+            <div
+              key={h}
+              title={`${String(h).padStart(2, "0")}:00 — ${val > 0 ? "$" + Math.round(val).toLocaleString("es-AR") : "Sin ventas"}`}
+              style={{
+                flex: 1,
+                height: `${barH}%`,
+                background: isPeak ? color : `color-mix(in srgb, ${color} 40%, transparent)`,
+                borderRadius: "2px 2px 0 0",
+                transition: "height 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                cursor: "default",
+                position: "relative",
+              }}
+            />
+          );
+        })}
+      </div>
+
+      {/* Hour axis labels */}
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        fontSize: 10,
+        color: "var(--text-muted)",
+        fontFamily: "'JetBrains Mono', monospace",
+        padding: "0 1px",
+      }}>
+        <span>00h</span>
+        <span>06h</span>
+        <span>12h</span>
+        <span>18h</span>
+        <span>23h</span>
+      </div>
+
+      {/* Peak annotation */}
+      <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+        Pico de ventas:&nbsp;
+        <span style={{ color, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+          {String(peakHour).padStart(2, "0")}:00 – {String(peakHour + 1).padStart(2, "0")}:00
+        </span>
+      </div>
+    </div>
+  );
+}

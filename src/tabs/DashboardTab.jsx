@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { CANALES, fmt } from "../utils/constants.js";
 import { StockBadge } from "../components/UI.jsx";
-import { Sparkline, ChannelDistributionBar } from "../components/AnalyticsCharts.jsx";
+import { Sparkline, ChannelDistributionBar, HourlyChart } from "../components/AnalyticsCharts.jsx";
 
 // ── Module-level constants (created once at module load, never on render) ────
 const CHANNEL_COLORS = {
@@ -15,9 +15,10 @@ const CHANNEL_COLORS = {
 const DAY_MS = 86_400_000; // 24 h in ms
 
 const RANGE_OPTS = [
-  { key: "today", label: "Hoy"    },
-  { key: "week",  label: "7 días" },
-  { key: "month", label: "Mes"    },
+  { key: "today", label: "Hoy"         },
+  { key: "week",  label: "Esta semana" },
+  { key: "month", label: "Este mes"    },
+  { key: "year",  label: "Este año"    },
 ];
 
 /**
@@ -31,23 +32,32 @@ const localMs = (v) => {
 
 // ────────────────────────────────────────────────────────────────────────────
 export function DashboardTab({ sales = [], products = [] }) {
-  const [range, setRange] = useState("today");
+  const [range, setRange]       = useState("today");
+  const [exportMsg, setExportMsg] = useState("");
 
-  // Midnight today in local tz — same bucket key used for sHoy AND trend
+  // Midnight today in local tz — bucket key shared across all date math
   const todayMs = localMs(new Date());
 
-  // ── Memoised derivations (recalculate only when deps change) ─────────────
+  // ── Range start timestamp ─────────────────────────────────────────────────
+  const rangeStart = useMemo(() => {
+    const d = new Date();
+    if (range === "today") return todayMs;
+    if (range === "week") {
+      // ISO week: Monday = day 0
+      const daysFromMon = (d.getDay() + 6) % 7;
+      return todayMs - daysFromMon * DAY_MS;
+    }
+    if (range === "month") return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    if (range === "year")  return new Date(d.getFullYear(), 0, 1).getTime();
+    return todayMs;
+  }, [range, todayMs]);
 
-  const sHoy = useMemo(
-    () => sales.filter(s => localMs(s.fecha) === todayMs),
-    [sales, todayMs],
+  // ── Memoised derivations ─────────────────────────────────────────────────
+
+  const sRange = useMemo(
+    () => sales.filter(s => localMs(s.fecha) >= rangeStart),
+    [sales, rangeStart],
   );
-
-  const sRange = useMemo(() => {
-    if (range === "today") return sHoy;
-    const days = range === "week" ? 7 : 30;
-    return sales.filter(s => localMs(s.fecha) >= todayMs - days * DAY_MS);
-  }, [sales, range, sHoy, todayMs]);
 
   const totGral = useMemo(
     () => sales.reduce((a, v) => a + (v.total || 0), 0),
@@ -58,6 +68,9 @@ export function DashboardTab({ sales = [], products = [] }) {
     () => sRange.reduce((a, v) => a + (v.total || 0), 0),
     [sRange],
   );
+
+  // Ticket promedio — average sale value in the selected period
+  const ticketPromedio = sRange.length > 0 ? totRange / sRange.length : 0;
 
   // Consistent bucketing: both sHoy and trend use localMs calendar-day diff
   const last7DaysTrend = useMemo(() => {
@@ -70,36 +83,38 @@ export function DashboardTab({ sales = [], products = [] }) {
   }, [sales, todayMs]);
 
   const hasTrend = last7DaysTrend.some(v => v > 0);
+  // Sum of the actual 7-day window — replaces all-time totGral in the hero card
+  const tot7d = last7DaysTrend.reduce((a, v) => a + v, 0);
 
-  // Channel colors now match CANALES keys exactly ("Tienda Nube", "Local / Mostrador")
+  // Channel distribution filtered to selected range
   const porCanal = useMemo(
     () => CANALES.map(c => ({
       name:  c,
-      total: sales.filter(s => s.canal === c).reduce((a, s) => a + (s.total || 0), 0),
+      total: sRange.filter(s => s.canal === c).reduce((a, s) => a + (s.total || 0), 0),
       color: CHANNEL_COLORS[c] ?? "var(--accent-cyan)",
     })),
-    [sales],
+    [sRange],
   );
 
-  // i.subtotal fallback prevents NaN accumulation
+  // Top 5 products — dual metric (units sold + revenue), range-filtered
   const top = useMemo(() => {
     const map = {};
-    sales.forEach(s =>
+    sRange.forEach(s =>
       s.items?.forEach(i => {
         if (!map[i.nombre]) map[i.nombre] = { qty: 0, total: 0 };
         map[i.nombre].qty   += i.qty      || 0;
-        map[i.nombre].total += i.subtotal || 0; // fallback: 0 if undefined
+        map[i.nombre].total += i.subtotal || 0;
       }),
     );
     return Object.entries(map).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5);
-  }, [sales]);
+  }, [sRange]);
 
   const alertas = useMemo(
     () => products.filter(p => p.stock <= p.stockMin),
     [products],
   );
 
-  // Only identified customers (tel or ig) — anonymous sales (s.id only) excluded
+  // Only identified customers (tel or ig) — anonymous sales excluded
   const clientesId = useMemo(
     () =>
       new Set(
@@ -110,10 +125,106 @@ export function DashboardTab({ sales = [], products = [] }) {
     [sales],
   );
 
-  // ── Shared style helpers (closures, no state dep) ────────────────────────
+  // ── Margen bruto estimado (conditional: only shown when products have costo) ──
+  const hasCosto = useMemo(
+    () => products.some(p => (p.costo || 0) > 0),
+    [products],
+  );
 
+  const margenBruto = useMemo(() => {
+    if (!hasCosto) return null;
+    // Build lookup maps by SKU and by nombre for fast access
+    const bySku    = {};
+    const byNombre = {};
+    products.forEach(p => {
+      if (!p.costo) return;
+      if (p.sku)    bySku[p.sku]       = p.costo;
+      if (p.nombre) byNombre[p.nombre] = p.costo;
+    });
+    let margen = 0;
+    sRange.forEach(s =>
+      s.items?.forEach(i => {
+        const costo = bySku[i.sku] ?? byNombre[i.nombre];
+        if (costo) margen += ((i.precio || 0) - costo) * (i.qty || 1);
+      }),
+    );
+    return margen;
+  }, [sRange, products, hasCosto]);
+
+  // ── Cliente más frecuente (all-time purchase count) ──────────────────────
+  const topCliente = useMemo(() => {
+    const counts = {};
+    sales.forEach(s => {
+      const id = s.cli?.nombre || s.cli?.tel || s.cli?.ig;
+      if (id) counts[id] = (counts[id] || 0) + 1;
+    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return sorted.length > 0 ? { nombre: sorted[0][0], count: sorted[0][1] } : null;
+  }, [sales]);
+
+  // ── Productos sin movimiento in selected period ──────────────────────────
+  const productosConVentas = useMemo(() => {
+    const set = new Set();
+    sRange.forEach(s =>
+      s.items?.forEach(i => {
+        if (i.nombre) set.add(i.nombre);
+        if (i.sku)    set.add(i.sku);
+      }),
+    );
+    return set;
+  }, [sRange]);
+
+  const sinMovimiento = useMemo(
+    () => products
+      .filter(p => p.activo)
+      .filter(p => !productosConVentas.has(p.nombre) && !productosConVentas.has(p.sku)),
+    [products, productosConVentas],
+  );
+
+  // ── Ventas por hora del día (range-filtered) ─────────────────────────────
+  const salesByHour = useMemo(() => {
+    const hours = new Array(24).fill(0);
+    sRange.forEach(s => {
+      const h = new Date(s.fecha).getHours();
+      hours[h] += s.total || 0;
+    });
+    return hours;
+  }, [sRange]);
+
+  const hasSalesByHour = salesByHour.some(v => v > 0);
+
+  // ── Export: WhatsApp-ready plain-text summary ────────────────────────────
+  const handleExport = () => {
+    const label = RANGE_OPTS.find(o => o.key === range)?.label ?? "Hoy";
+    const lines = [
+      `*RENDIX POS · Resumen ${label}*`,
+      ``,
+      `Ventas: ${sRange.length}`,
+      `Facturacion: ${fmt(totRange)}`,
+      sRange.length > 0 ? `Ticket promedio: ${fmt(ticketPromedio)}` : null,
+      margenBruto !== null ? `Margen bruto est.: ${fmt(margenBruto)}` : null,
+      topCliente ? `Cliente frecuente: ${topCliente.nombre} (${topCliente.count} compras)` : null,
+      top.length > 0
+        ? `\nTop productos:\n${top.map(([n, d], i) => `${i + 1}. ${n} - ${d.qty} unid. - ${fmt(d.total)}`).join("\n")}`
+        : null,
+      alertas.length > 0 ? `\nAlertas de stock: ${alertas.length} productos` : null,
+    ].filter(Boolean).join("\n");
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(lines)
+        .then(() => { setExportMsg("Copiado al portapapeles"); setTimeout(() => setExportMsg(""), 2500); })
+        .catch(() => { setExportMsg("Error al copiar"); setTimeout(() => setExportMsg(""), 2500); });
+    } else {
+      setExportMsg("Sin soporte de clipboard");
+      setTimeout(() => setExportMsg(""), 2500);
+    }
+  };
+
+  // ── Shared style helpers ─────────────────────────────────────────────────
+
+  // Fixed: use var(--bg-card) so light-theme override in index.css takes effect
   const glass = {
-    background: "rgba(14,20,32,0.75)",
+    background: "var(--bg-card)",
     backdropFilter: "blur(16px)",
     WebkitBackdropFilter: "blur(16px)",
   };
@@ -126,7 +237,7 @@ export function DashboardTab({ sales = [], products = [] }) {
     letterSpacing: "0.5px",
   };
 
-  // Monospace numeric value style with optional neon glow
+  // Monospace numeric value with optional neon glow
   const mono = (color = "var(--text-primary)", glow) => ({
     fontSize: 22,
     fontWeight: 800,
@@ -135,13 +246,13 @@ export function DashboardTab({ sales = [], products = [] }) {
     ...(glow ? { textShadow: `0 0 12px ${glow}` } : {}),
   });
 
-  // Stagger offset for booting-up cascade animation
+  // Stagger offset for cascade animation
   const fade = i => ({
     animation: "dashFadeIn 0.35s ease both",
     animationDelay: `${i * 60}ms`,
   });
 
-  // Section heading style — danger variant for stock alerts
+  // Section heading — danger variant for stock alerts
   const sHead = (danger = false) => ({
     fontSize: 13,
     fontWeight: 700,
@@ -150,15 +261,13 @@ export function DashboardTab({ sales = [], products = [] }) {
     textTransform: "uppercase",
     letterSpacing: "0.5px",
     marginBottom: 12,
-    margin: 0,
-    marginBottom: 12,
   });
 
   const rangeLabel = RANGE_OPTS.find(o => o.key === range)?.label ?? "Hoy";
 
   return (
     <>
-      {/* ── Keyframes + utility classes (inlined, no external deps) ── */}
+      {/* ── Keyframes + utility classes ── */}
       <style>{`
         @keyframes dashFadeIn {
           from { opacity: 0; transform: translateY(6px); }
@@ -194,27 +303,56 @@ export function DashboardTab({ sales = [], products = [] }) {
         .kpi-card:hover { transform: translateY(-2px); }
       `}</style>
 
-      {/* ── Dashboard container — 8-pt grid spacing ────────────────── */}
+      {/* ── Dashboard container ─────────────────────────────────────────── */}
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
 
-        {/* ── Date range toggle ──────────────────────────────────────── */}
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", ...fade(0) }}>
-          {RANGE_OPTS.map(({ key, label }) => (
+        {/* ── Date range toggles + Export button ──────────────────────── */}
+        <div style={{
+          display: "flex", gap: 8,
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          ...fade(0),
+        }}>
+          {/* Quick filters: Hoy / Esta semana / Este mes / Este año */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {RANGE_OPTS.map(({ key, label }) => (
+              <button
+                key={key}
+                className="rng-btn"
+                aria-pressed={range === key}
+                onClick={() => setRange(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* WhatsApp-ready export */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {exportMsg && (
+              <span style={{
+                fontSize: 11,
+                color: "var(--accent-cyan)",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                {exportMsg}
+              </span>
+            )}
             <button
-              key={key}
               className="rng-btn"
-              aria-pressed={range === key}
-              onClick={() => setRange(key)}
+              onClick={handleExport}
+              title="Copiar resumen listo para WhatsApp"
             >
-              {label}
+              Exportar
             </button>
-          ))}
+          </div>
         </div>
 
-        {/* ── Primary KPI row ────────────────────────────────────────── */}
+        {/* ── Primary KPI row ─────────────────────────────────────────── */}
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", ...fade(1) }}>
 
-          {/* Ventas del período seleccionado — cyan accent, glowing */}
+          {/* Ventas del período — cyan accent */}
           <div className="kpi-card" style={{
             ...glass,
             flex: 1, minWidth: 120,
@@ -257,10 +395,10 @@ export function DashboardTab({ sales = [], products = [] }) {
           </div>
         </div>
 
-        {/* ── Secondary KPI row ──────────────────────────────────────── */}
+        {/* ── Secondary KPI row ───────────────────────────────────────── */}
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", ...fade(2) }}>
 
-          {/* Clientes identificados (only those with tel/ig — no anonymous inflation) */}
+          {/* Clientes identificados */}
           <div className="kpi-card" style={{
             ...glass,
             flex: 1, minWidth: 120,
@@ -275,7 +413,7 @@ export function DashboardTab({ sales = [], products = [] }) {
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>Con tel / IG registrado</div>
           </div>
 
-          {/* Stock alerts KPI — warm glow when issues exist */}
+          {/* Alertas de stock */}
           <div className="kpi-card" style={{
             ...glass,
             flex: 1, minWidth: 120,
@@ -300,7 +438,82 @@ export function DashboardTab({ sales = [], products = [] }) {
           </div>
         </div>
 
-        {/* ── Sparkline trend — hero card with cyan left-border ─────── */}
+        {/* ── Tertiary KPI row: ticket promedio + margen bruto + cliente ── */}
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", ...fade(3) }}>
+
+          {/* Ticket promedio */}
+          <div className="kpi-card" style={{
+            ...glass,
+            flex: 1, minWidth: 120,
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-md)",
+            padding: "12px 14px",
+            display: "flex", flexDirection: "column", gap: 4,
+            boxShadow: "var(--shadow-sm)",
+          }}>
+            <span style={labelCss}>Ticket promedio</span>
+            <div style={{
+              fontSize: 18, fontWeight: 800,
+              color: "var(--accent-cyan)",
+              fontFamily: "'JetBrains Mono', monospace",
+            }}>
+              {sRange.length > 0 ? fmt(ticketPromedio) : "—"}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{rangeLabel}</div>
+          </div>
+
+          {/* Margen bruto estimado — only rendered when products carry a costo field */}
+          {hasCosto && margenBruto !== null && (
+            <div className="kpi-card" style={{
+              ...glass,
+              flex: 1, minWidth: 120,
+              border: "1px solid rgba(139,92,246,0.4)",
+              borderRadius: "var(--radius-md)",
+              padding: "12px 14px",
+              display: "flex", flexDirection: "column", gap: 4,
+              boxShadow: "0 0 10px rgba(139,92,246,0.12)",
+            }}>
+              <span style={labelCss}>Margen bruto est.</span>
+              <div style={{
+                fontSize: 18, fontWeight: 800,
+                color: "var(--accent-purple,#8B5CF6)",
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                {fmt(margenBruto)}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                {rangeLabel} · sobre costo
+              </div>
+            </div>
+          )}
+
+          {/* Cliente más frecuente */}
+          {topCliente && (
+            <div className="kpi-card" style={{
+              ...glass,
+              flex: 1, minWidth: 160,
+              border: "1px solid rgba(245,158,11,0.35)",
+              borderRadius: "var(--radius-md)",
+              padding: "12px 14px",
+              display: "flex", flexDirection: "column", gap: 4,
+              boxShadow: "0 0 10px rgba(245,158,11,0.1)",
+            }}>
+              <span style={labelCss}>Cliente frecuente</span>
+              <div style={{
+                fontSize: 14, fontWeight: 700,
+                color: "var(--status-warning)",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {topCliente.nombre}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                {topCliente.count} compras registradas
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Sparkline trend hero — now shows real 7-day sum (tot7d) ─── */}
         <div style={{
           ...glass,
           border: "1px solid var(--accent-cyan)",
@@ -308,7 +521,7 @@ export function DashboardTab({ sales = [], products = [] }) {
           borderRadius: "var(--radius-md)",
           padding: "14px 16px",
           boxShadow: "0 0 16px rgba(0,229,255,0.12)",
-          ...fade(3),
+          ...fade(4),
         }}>
           <div style={sHead()}>Tendencia · Últimos 7 días</div>
           {hasTrend ? (
@@ -321,13 +534,12 @@ export function DashboardTab({ sales = [], products = [] }) {
                   fontFamily: "'JetBrains Mono', monospace",
                   textShadow: "0 0 12px rgba(0,229,255,0.6)",
                 }}>
-                  {fmt(totGral)}
+                  {fmt(tot7d)}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                  Facturación acumulada
+                  Últimos 7 días
                 </div>
               </div>
-              {/* Real data only — no fake demo data fallback */}
               <Sparkline data={last7DaysTrend} color="var(--accent-cyan)" width={140} height={42} />
             </div>
           ) : (
@@ -343,86 +555,160 @@ export function DashboardTab({ sales = [], products = [] }) {
           )}
         </div>
 
-        {/* ── Channel distribution ───────────────────────────────────── */}
+        {/* ── Mejor hora de ventas (rendered only when there is hourly data) ── */}
+        {hasSalesByHour && (
+          <div style={{
+            ...glass,
+            border: "1px solid var(--border-subtle)",
+            borderRadius: "var(--radius-md)",
+            padding: "14px 16px",
+            boxShadow: "var(--shadow-sm)",
+            ...fade(5),
+          }}>
+            <div style={sHead()}>Mejor hora de ventas · {rangeLabel}</div>
+            <HourlyChart data={salesByHour} color="var(--accent-cyan)" />
+          </div>
+        )}
+
+        {/* ── Channel distribution (range-filtered) ───────────────────── */}
         <div style={{
           ...glass,
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--radius-md)",
           padding: "14px 16px",
           boxShadow: "var(--shadow-sm)",
-          ...fade(4),
+          ...fade(6),
         }}>
-          <div style={sHead()}>Distribución por Canal de Venta</div>
+          <div style={sHead()}>Distribución por Canal · {rangeLabel}</div>
           <ChannelDistributionBar channels={porCanal} />
         </div>
 
-        {/* ── Top 5 products ─────────────────────────────────────────── */}
+        {/* ── Top 5 products — units sold + revenue (dual metric) ─────── */}
         <div style={{
           ...glass,
           border: "1px solid var(--border-subtle)",
           borderRadius: "var(--radius-md)",
           padding: "14px 16px",
-          ...fade(5),
+          ...fade(7),
         }}>
-          <div style={sHead()}>Top 5 Productos más Vendidos</div>
+          <div style={sHead()}>Top 5 Productos · {rangeLabel}</div>
 
-          {top.length > 0 ? top.map(([nombre, d], i) => (
-            <div key={nombre} style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              fontSize: 12,
-              padding: "8px 0",
-              // No trailing border on last item
-              borderBottom: i < top.length - 1 ? "1px dashed var(--border-subtle)" : "none",
-              minHeight: 44,
-              gap: 8,
-            }}>
-              {/* Rank — monospace, neon glow */}
-              <span style={{
-                color: "var(--accent-cyan)",
-                fontWeight: 700,
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 11,
-                minWidth: 24,
-                textShadow: "0 0 8px rgba(0,229,255,0.4)",
+          {top.length > 0 ? top.map(([nombre, d], i) => {
+            const maxQty = top[0]?.[1]?.qty || 1;
+            return (
+              <div key={nombre} style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                fontSize: 12,
+                padding: "8px 0",
+                borderBottom: i < top.length - 1 ? "1px dashed var(--border-subtle)" : "none",
+                minHeight: 44,
+                gap: 8,
               }}>
-                #{i + 1}
-              </span>
-              <span style={{
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                fontWeight: 500,
-                color: "var(--text-primary)",
-              }}>
-                {nombre}
-              </span>
-              {/* 'unid.' is standard Argentine abbreviation; · separator distinguishes from $ decimal */}
-              <span style={{
-                fontWeight: 600,
-                fontFamily: "'JetBrains Mono', monospace",
-                fontSize: 11,
-                color: "var(--text-secondary)",
-                whiteSpace: "nowrap",
-              }}>
-                {d.qty} unid. &middot; {fmt(d.total)}
-              </span>
-            </div>
-          )) : (
+                {/* Rank */}
+                <span style={{
+                  color: "var(--accent-cyan)",
+                  fontWeight: 700,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 11,
+                  minWidth: 24,
+                  textShadow: "0 0 8px rgba(0,229,255,0.4)",
+                }}>
+                  #{i + 1}
+                </span>
+
+                {/* Name + progress bar (units relative to #1) */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3, overflow: "hidden" }}>
+                  <span style={{
+                    fontWeight: 500,
+                    color: "var(--text-primary)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {nombre}
+                  </span>
+                  <div style={{ height: 3, borderRadius: 99, background: "var(--border-subtle)", overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%",
+                      width: `${(d.qty / maxQty) * 100}%`,
+                      background: "var(--accent-cyan)",
+                      opacity: 0.55,
+                      borderRadius: 99,
+                    }} />
+                  </div>
+                </div>
+
+                {/* Dual metric: units + revenue */}
+                <span style={{
+                  fontWeight: 600,
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 11,
+                  color: "var(--text-secondary)",
+                  whiteSpace: "nowrap",
+                }}>
+                  {d.qty} unid. &middot; {fmt(d.total)}
+                </span>
+              </div>
+            );
+          }) : (
             <div style={{
               fontSize: 12,
               color: "var(--text-muted)",
               textAlign: "center",
               padding: "16px 0",
             }}>
-              Sin ventas registradas todavía
+              Sin ventas en el período seleccionado
             </div>
           )}
         </div>
 
-        {/* ── Stock alerts — danger accent border + red glow ─────────── */}
+        {/* ── Productos sin movimiento in selected period ──────────────── */}
+        {sinMovimiento.length > 0 && (
+          <div style={{
+            ...glass,
+            border: "1px solid rgba(245,158,11,0.3)",
+            borderLeft: "3px solid var(--status-warning)",
+            borderRadius: "var(--radius-md)",
+            padding: "14px 16px",
+            boxShadow: "0 0 10px rgba(245,158,11,0.08)",
+            ...fade(8),
+          }}>
+            <div style={sHead()}>
+              Sin movimiento · {rangeLabel} ({sinMovimiento.length})
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0, maxHeight: 192, overflowY: "auto" }}>
+              {sinMovimiento.map((p, i) => (
+                <div key={p.sku} style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: 12,
+                  padding: "7px 0",
+                  borderBottom: i < sinMovimiento.length - 1 ? "1px dashed var(--border-subtle)" : "none",
+                  gap: 8,
+                }}>
+                  <span style={{
+                    flex: 1,
+                    color: "var(--text-primary)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {p.nombre}
+                  </span>
+                  <span style={{
+                    fontSize: 10,
+                    color: "var(--text-muted)",
+                    fontFamily: "'JetBrains Mono', monospace",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {p.sku} · stock {p.stock}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Stock alerts — danger accent ─────────────────────────────── */}
         <div style={{
           ...glass,
           border: alertas.length > 0
@@ -436,7 +722,7 @@ export function DashboardTab({ sales = [], products = [] }) {
           boxShadow: alertas.length > 0
             ? "0 0 12px rgba(255,0,80,0.15)"
             : "var(--shadow-sm)",
-          ...fade(6),
+          ...fade(9),
         }}>
           <div style={sHead(alertas.length > 0)}>
             {alertas.length > 0
@@ -451,7 +737,6 @@ export function DashboardTab({ sales = [], products = [] }) {
               justifyContent: "space-between",
               fontSize: 12,
               padding: "8px 0",
-              // No trailing border on last item
               borderBottom: i < alertas.length - 1 ? "1px dashed var(--border-subtle)" : "none",
               minHeight: 44,
               gap: 8,
@@ -460,7 +745,6 @@ export function DashboardTab({ sales = [], products = [] }) {
                 <span style={{ fontWeight: 500, color: "var(--text-primary)" }}>
                   {p.nombre}
                 </span>
-                {/* SKU in monospace as data identifier */}
                 <span style={{
                   fontSize: 10,
                   color: "var(--text-muted)",
