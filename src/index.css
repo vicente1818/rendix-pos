@@ -53,6 +53,29 @@
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* UI-UX Pro Max Theme: Pharmacy Emerald & Trust Blue */
+[data-theme="pharmacy"] {
+  --bg-app: #061A12;
+  --bg-card: rgba(11, 40, 29, 0.85);
+  --bg-surface: #092B1E;
+  --bg-surface-elevated: #0F3D2B;
+  --bg-glass: rgba(9, 43, 30, 0.9);
+
+  --accent-cyan: #10B981;
+  --accent-cyan-glow: rgba(16, 185, 129, 0.25);
+  --accent-blue: #0284C7;
+  --accent-purple: #34D399;
+
+  --text-primary: #F0FDF4;
+  --text-secondary: #A7F3D0;
+  --text-muted: #6EE7B7;
+
+  --border-subtle: rgba(16, 185, 129, 0.15);
+  --border-medium: rgba(16, 185, 129, 0.3);
+
+  --shadow-glow: 0 0 28px -4px rgba(16, 185, 129, 0.4);
+}
+
 [data-theme="cyberpunk"] {
   --bg-app: #05050A;
   --bg-card: rgba(20, 10, 35, 0.85);
