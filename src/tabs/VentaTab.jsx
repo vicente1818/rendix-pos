@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from "react";
-import { CANALES, METODOS, fmt, genId } from "../utils/constants.js";
+import { CANALES, METODOS, formatCurrency, generateSaleId } from "../utils/constants.js";
 import { postToSheets, getSheetsUrl } from "../utils/sheets.js";
 import { generateWhatsAppReceiptLink, generateWhatsAppQuoteLink } from "../utils/whatsapp.js";
 import { Button, SectionCard, SearchInput, StockBadge } from "../components/UI.jsx";
@@ -16,7 +16,7 @@ const VENTA_TAB_CSS = `
   .product-card-venta:hover {
     border-color: rgba(0,229,255,0.6) !important;
     box-shadow: 0 0 14px rgba(0,229,255,0.35);
-    transform: translateY(-1px);
+    transform: translateY(-3px) scale(1.015);
   }
   .product-card-venta:active {
     transform: scale(0.98);
@@ -27,7 +27,7 @@ const VENTA_TAB_CSS = `
     outline-offset: 2px;
   }
   .stepper-btn-venta {
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s cubic-bezier(0.34,1.56,0.64,1);
   }
   .stepper-btn-venta:hover:not([aria-disabled="true"]) {
     border-color: rgba(0,229,255,0.6) !important;
@@ -35,14 +35,15 @@ const VENTA_TAB_CSS = `
   }
   .stepper-btn-venta:active:not([aria-disabled="true"]) {
     box-shadow: 0 0 12px var(--accent-cyan, #00E5FF);
+    transform: scale(0.90);
   }
   .select-dark {
-    background: var(--bg-surface, #0E1420);
-    color: var(--text-primary, #F8FAFC);
-    border: 1px solid var(--border-subtle, #1E2A3A);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
     padding: 10px 12px;
-    font-size: 13px;
+    font-size: 16px;
     width: 100%;
     min-height: 44px;
     cursor: pointer;
@@ -56,12 +57,12 @@ const VENTA_TAB_CSS = `
     box-shadow: 0 0 0 2px rgba(0,229,255,0.15), 0 0 8px rgba(0,229,255,0.2);
   }
   .input-dark {
-    background: var(--bg-surface, #0E1420);
-    color: var(--text-primary, #F8FAFC);
-    border: 1px solid var(--border-subtle, #1E2A3A);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border-subtle);
     border-radius: 4px;
     padding: 10px 12px;
-    font-size: 13px;
+    font-size: 16px;
     width: 100%;
     min-height: 44px;
     box-sizing: border-box;
@@ -97,6 +98,10 @@ const VENTA_TAB_CSS = `
     border-color: rgba(0,229,255,0.5) !important;
     color: var(--accent-cyan) !important;
   }
+  .quick-disc-btn:active {
+    transform: scale(0.94);
+    opacity: 0.85;
+  }
 `;
 
 if (typeof document !== "undefined" && !document.getElementById("venta-tab-cn-styles")) {
@@ -109,7 +114,7 @@ if (typeof document !== "undefined" && !document.getElementById("venta-tab-cn-st
 // ── Shared design tokens ──────────────────────────────────────────────────────
 const MONO = "'JetBrains Mono', 'Fira Mono', monospace";
 const GLASS = {
-  background: "rgba(14,20,32,0.75)",
+  background: "var(--bg-card)",
   backdropFilter: "blur(16px)",
   WebkitBackdropFilter: "blur(16px)",
 };
@@ -131,7 +136,7 @@ export function VentaTab({
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
   const [showMpQrModal, setShowMpQrModal] = useState(false);
   // BUG FIX: stable QR order ID — generated once when the modal is opened,
-  // not on every render via genId() in JSX.
+  // not on every render via generateSaleId() in JSX.
   const [mpQrOrderId, setMpQrOrderId] = useState(null);
   // UX: Vaciar requires double-tap confirmation
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -224,7 +229,7 @@ export function VentaTab({
   // BUG FIX: generate a stable posOrderId once, stored in state, so the QR
   // modal and the venta record share the same ID.
   const openMpQrModal = () => {
-    setMpQrOrderId(genId().slice(0, 8));
+    setMpQrOrderId(generateSaleId().slice(0, 8));
     setShowMpQrModal(true);
   };
 
@@ -249,7 +254,7 @@ export function VentaTab({
     setSyncError(null);
     try {
       const venta = {
-        id: overrideId || genId(),
+        id: overrideId || generateSaleId(),
         fecha: new Date().toISOString(),
         canal, metodo, vendedor, cli,
         items: cart.map(i => ({ ...i, subtotal: i.precio * i.qty })),
@@ -303,7 +308,7 @@ export function VentaTab({
           ¡Venta Confirmada!
         </div>
         <div style={{ color: "var(--text-secondary)", marginTop: 8, fontSize: 15, fontWeight: 600, fontFamily: MONO }} className="tabular-nums">
-          {fmt(lastCompletedSale.total)} · {lastCompletedSale.canal}
+          {formatCurrency(lastCompletedSale.total)} · {lastCompletedSale.canal}
         </div>
         {/* UX: sale reference ID for cashier reconciliation */}
         <div style={{
@@ -359,21 +364,21 @@ export function VentaTab({
         {cart.map(i => (
           <div key={i.sku} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
             <span style={{ color: "var(--text-secondary)" }}>{i.qty}× {i.nombre}</span>
-            <span style={{ fontWeight: 600, fontFamily: MONO }} className="tabular-nums">{fmt(i.precio * i.qty)}</span>
+            <span style={{ fontWeight: 600, fontFamily: MONO }} className="tabular-nums">{formatCurrency(i.precio * i.qty)}</span>
           </div>
         ))}
         <div style={{ borderTop: "1px dashed var(--border-subtle)", margin: "8px 0" }} />
         {descPct > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "var(--status-success)", marginBottom: 8, fontFamily: MONO }} className="tabular-nums">
             <span>Descuento {descPct}%</span>
-            <span>−{fmt(descMonto)}</span>
+            <span>−{formatCurrency(descMonto)}</span>
           </div>
         )}
         {/* Dual-currency total: ARS primary, USD secondary when usdRate is available */}
         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 16, fontFamily: MONO }} className="tabular-nums">
           <span>TOTAL</span>
           <div style={{ textAlign: "right" }}>
-            <div style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.5)" }}>{fmt(total)}</div>
+            <div style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.5)" }}>{formatCurrency(total)}</div>
             {usdRate && usdRate > 0 && (
               <div style={{ fontSize: 11, fontWeight: 500, color: "var(--text-muted)", marginTop: 2 }}>
                 ≈ USD {(total / usdRate).toFixed(2)}
@@ -407,9 +412,11 @@ export function VentaTab({
       {/* BUG FIX: compare against "Mercado Pago" which is the actual METODOS value.
           The previous "MercadoPago QR" never matched, making this entire branch dead. */}
       {metodo === "Mercado Pago" ? (
-        <Button variant="primary" fullWidth size="lg" onClick={openMpQrModal}
-          style={{ boxShadow: GLOW_CYAN }}>
-          Generar QR Mercado Pago 📱
+        <Button variant='primary' fullWidth size='lg'
+          onClick={openMpQrModal}
+          disabled={saving}
+          style={{ boxShadow: saving ? 'none' : GLOW_CYAN }}>
+          {saving ? 'Procesando...' : 'Generar QR Mercado Pago 📱'}
         </Button>
       ) : (
         <Button variant="primary" fullWidth size="lg" onClick={() => confirmar()} disabled={saving}
@@ -423,7 +430,7 @@ export function VentaTab({
       </Button>
 
       {/* BUG FIX: posOrderId comes from state (set once in openMpQrModal),
-          not from genId() called directly in JSX on every render. */}
+          not from generateSaleId() called directly in JSX on every render. */}
       {showMpQrModal && mpQrOrderId && (
         <MercadoPagoQRModal
           posOrderId={mpQrOrderId}
@@ -514,7 +521,7 @@ export function VentaTab({
           </div>
           {descPct > 0 && (
             <div style={{ fontSize: 12, color: "var(--status-success)", marginTop: 8, fontWeight: 500, fontFamily: MONO }} className="tabular-nums">
-              Ahorro: {fmt(descMonto)} · Total: {fmt(total)}
+              Ahorro: {formatCurrency(descMonto)} · Total: {formatCurrency(total)}
             </div>
           )}
         </div>
@@ -565,7 +572,7 @@ export function VentaTab({
             onClick={() => setStep("datos")}
             style={{ whiteSpace: "nowrap", boxShadow: GLOW_CYAN, fontFamily: MONO, fontSize: 12 }}
           >
-            Carrito ({totalQty}) · {fmt(total)}
+            Carrito ({totalQty}) · {formatCurrency(total)}
           </Button>
         )}
       </div>
@@ -627,6 +634,7 @@ export function VentaTab({
                 <button
                   onClick={() => updQ(i.sku, -1)}
                   aria-disabled={isMin ? "true" : "false"}
+                  aria-label={isMin ? 'Reducir cantidad de ' + i.nombre + ' (mínimo alcanzado)' : 'Reducir cantidad de ' + i.nombre}
                   title={isMin ? "Mínimo 1 — usa ✕ para eliminar el producto" : "Reducir cantidad"}
                   className="touch-target-48 tactile-btn stepper-btn-venta"
                   style={{
@@ -647,6 +655,7 @@ export function VentaTab({
                 <button
                   onClick={() => !isMax && updQ(i.sku, 1)}
                   aria-disabled={isMax ? "true" : "false"}
+                  aria-label={isMax ? 'Aumentar cantidad de ' + i.nombre + ' (stock máximo alcanzado)' : 'Aumentar cantidad de ' + i.nombre}
                   title={isMax ? `Stock máximo alcanzado (${stockMax} unidades)` : "Aumentar cantidad"}
                   className="touch-target-48 tactile-btn stepper-btn-venta"
                   style={{
@@ -674,10 +683,11 @@ export function VentaTab({
                   </span>
                 )}
                 <span style={{ minWidth: 72, textAlign: "right", fontWeight: 700, color: "var(--accent-cyan)", fontFamily: MONO }} className="tabular-nums">
-                  {fmt(i.precio * i.qty)}
+                  {formatCurrency(i.precio * i.qty)}
                 </span>
                 <button
                   onClick={() => delP(i.sku)}
+                  aria-label={'Quitar ' + i.nombre + ' del carrito'}
                   title="Quitar producto"
                   className="touch-target-48"
                   style={{ color: "var(--status-danger)", background: "none", border: "none", fontSize: 18, cursor: "pointer", minWidth: 32, minHeight: 44 }}
@@ -689,7 +699,7 @@ export function VentaTab({
           <div style={{ borderTop: "1px dashed var(--border-subtle)", margin: "8px 0" }} />
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, fontFamily: MONO }} className="tabular-nums">
             <span>Subtotal</span>
-            <span style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.4)" }}>{fmt(subtotal)}</span>
+            <span style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.4)" }}>{formatCurrency(subtotal)}</span>
           </div>
         </SectionCard>
       )}
@@ -725,7 +735,7 @@ export function VentaTab({
             tabIndex={0}
             onClick={() => addP(p)}
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addP(p); } }}
-            aria-label={`Agregar ${p.nombre} al carrito — ${fmt(p.precio)}`}
+            aria-label={`Agregar ${p.nombre} al carrito — ${formatCurrency(p.precio)}`}
             className="tactile-btn product-card-venta"
             style={{
               ...GLASS,
@@ -755,7 +765,7 @@ export function VentaTab({
             </div>
             <div style={{ textAlign: "right", flexShrink: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: "var(--accent-cyan)", marginBottom: 4, fontFamily: MONO }} className="tabular-nums">
-                {fmt(p.precio)}
+                {formatCurrency(p.precio)}
               </div>
               <StockBadge stock={p.stock} min={p.stockMin} />
             </div>

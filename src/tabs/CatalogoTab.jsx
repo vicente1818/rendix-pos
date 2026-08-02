@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, memo } from "react";
 import { save } from "../utils/storage.js";
 import { postToSheets } from "../utils/sheets.js";
 import { fileToDataURL } from "../utils/tiendanube.js";
-import { K, fmt } from "../utils/constants.js";
+import { K, formatCurrency } from "../utils/constants.js";
 import { Button, SectionCard, SearchInput, StockBadge, Badge, EmptyState } from "../components/UI.jsx";
 import { getProductImage } from "../utils/imageMatcher.js";
 
@@ -309,7 +309,7 @@ const ProductRow = memo(function ProductRow({
           fontFamily: "'JetBrains Mono', monospace",
           textShadow: "0 0 8px rgba(0,229,255,0.5), 0 0 2px rgba(0,229,255,0.8)",
           flexShrink: 0,
-        }}>{fmt(p.precio)}</span>
+        }}>{formatCurrency(p.precio)}</span>
 
         <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap", justifyContent: "flex-end" }}>
           {isEditing ? (

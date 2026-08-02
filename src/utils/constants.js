@@ -28,6 +28,6 @@ export const DEMO_PRODUCTS = [
   {sku:"CMB-001",nombre:"Kit PCT Completo",cat:"Combos",marca:"Genérico",pres:"Kit",precio:68000,stock:8,stockMin:2,activo:true,imagen:"/farma/landerlan-drostanolona.jpg"},
 ];
 
-export const fmt = n => "$\u200b" + Math.round(n || 0).toLocaleString("es-AR");
-export const fmtD = d => new Date(d).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-export const genId = () => "VTA-" + Date.now().toString(36).toUpperCase();
+export const formatCurrency = n => "$\u200b" + Math.round(n || 0).toLocaleString("es-AR");
+export const formatDateTime = d => new Date(d).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+export const generateSaleId = () => "VTA-" + Date.now().toString(36).toUpperCase();

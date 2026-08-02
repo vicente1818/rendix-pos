@@ -12,12 +12,20 @@ db.version(1).stores({
 
 export async function initDatabase() {
   try {
+    await db.open();
+  } catch (e) {
+    console.error("Dexie DB Init Error:", e);
+  }
+}
+
+export async function seedDemoProductsIfEmpty() {
+  try {
     const prodCount = await db.products.count();
     if (prodCount === 0) {
       await db.products.bulkAdd(DEMO_PRODUCTS);
     }
   } catch (e) {
-    console.error("Dexie DB Init Error:", e);
+    console.error("Dexie Seed Error:", e);
   }
 }
 

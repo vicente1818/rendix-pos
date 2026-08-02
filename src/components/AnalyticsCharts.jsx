@@ -1,27 +1,28 @@
-export function Sparkline({ data = [12, 18, 15, 25, 22, 30, 28], color = "var(--accent-cyan)", width = 120, height = 36 }) {
+import { memo, useMemo } from 'react';
+
+export const Sparkline = memo(function Sparkline({ data = [12, 18, 15, 25, 22, 30, 28], color = "var(--accent-cyan)", width = 120, height = 36 }) {
   const safeData = Array.isArray(data) && data.length > 0 ? data : [0];
   const max = Math.max(...safeData, 1);
   const min = Math.min(...safeData, 0);
   const range = max - min || 1;
   const divisor = safeData.length > 1 ? safeData.length - 1 : 1;
-
-  const points = safeData.map((val, i) => {
+  const gradId = useMemo(() => 'sparklineGrad-' + color.replace(/[^a-zA-Z0-9]/g, ''), [color]);
+  const points = useMemo(() => safeData.map((val, i) => {
     const x = (i / divisor) * width;
     const y = height - ((val - min) / range) * (height - 8) - 4;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-
+  }).join(" "), [safeData, divisor, width, height, min, range]);
   const fillPoints = `0,${height} ${points} ${width},${height}`;
 
   return (
     <svg width={width} height={height} style={{ overflow: "visible" }}>
       <defs>
-        <linearGradient id={`sparklineGrad-${color.replace(/[^a-zA-Z0-9]/g, "")}`} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.4" />
           <stop offset="100%" stopColor={color} stopOpacity="0.0" />
         </linearGradient>
       </defs>
-      <polygon points={fillPoints} fill={`url(#sparklineGrad-${color.replace(/[^a-zA-Z0-9]/g, "")})`} />
+      <polygon points={fillPoints} fill={`url(#${gradId})`} />
       <polyline
         fill="none"
         stroke={color}
@@ -32,9 +33,9 @@ export function Sparkline({ data = [12, 18, 15, 25, 22, 30, 28], color = "var(--
       />
     </svg>
   );
-}
+});
 
-export function ChannelDistributionBar({ channels }) {
+export const ChannelDistributionBar = memo(function ChannelDistributionBar({ channels }) {
   const total = channels.reduce((acc, c) => acc + (c.total || 0), 0) || 1;
 
   return (
@@ -69,14 +70,14 @@ export function ChannelDistributionBar({ channels }) {
       </div>
     </div>
   );
-}
+});
 
 /**
  * HourlyChart — 24-bar mini chart of revenue/count by hour of day.
  * `data` must be a 24-element array (index = hour 0–23, value = revenue or count).
  * The peak bar is highlighted with full color; others are at 40% opacity.
  */
-export function HourlyChart({ data = [], color = "var(--accent-cyan)" }) {
+export const HourlyChart = memo(function HourlyChart({ data = [], color = "var(--accent-cyan)" }) {
   if (!Array.isArray(data) || data.length !== 24) return null;
 
   const max      = Math.max(...data, 1);
@@ -142,4 +143,4 @@ export function HourlyChart({ data = [], color = "var(--accent-cyan)" }) {
       </div>
     </div>
   );
-}
+});

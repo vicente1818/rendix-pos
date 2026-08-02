@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { fmt, fmtD } from "../utils/constants.js";
+import { formatCurrency, formatDateTime } from "../utils/constants.js";
 import { SectionCard, SearchInput, Badge, EmptyState } from "../components/UI.jsx";
 
 const MONO = "'JetBrains Mono', 'Space Mono', monospace";
@@ -319,8 +319,7 @@ export function ClientesTab({ sales = [] }) {
         all.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
         break;
       case "reciente": {
-        const lastTs = c =>
-          Math.max(0, ...c.ventas.map(v => (v.fecha ? new Date(v.fecha).getTime() : 0)));
+        const lastTs = c => c.lastFecha ? new Date(c.lastFecha).getTime() : 0;
         all.sort((a, b) => lastTs(b) - lastTs(a));
         break;
       }
@@ -478,7 +477,7 @@ export function ClientesTab({ sales = [] }) {
                   <div style={S.rightText}>
                     {/* tabular-nums prevents digit-width jitter as amounts vary */}
                     <div style={S.totalAmount} className="tabular-nums">
-                      {fmt(c.total)}
+                      {formatCurrency(c.total)}
                     </div>
                     <div style={S.purchaseCount}>
                       {c.ventas.length} compra{c.ventas.length !== 1 ? "s" : ""}
@@ -504,12 +503,12 @@ export function ClientesTab({ sales = [] }) {
                     <div key={v.id} style={S.historyRow}>
                       {/* BUG FIX: null-guard on v.fecha */}
                       <span style={S.historyDate}>
-                        {v.fecha ? fmtD(v.fecha) : "--"}
+                        {v.fecha ? formatDateTime(v.fecha) : "--"}
                       </span>
                       {/* BUG FIX: fallback for missing canal; Badge for visual scannability */}
                       <Badge color="cyan">{v.canal || "Sin canal"}</Badge>
                       <span style={S.historyTotal} className="tabular-nums">
-                        {fmt(v.total)}
+                        {formatCurrency(v.total)}
                       </span>
                     </div>
                   ))}

@@ -108,7 +108,7 @@ const FORM_INITIAL = {
   pres: "", precio: "", stock: "", stockMin: "3", imagen: "",
 };
 
-export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateConfig }) {
+export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateConfig, onUsdRateUpdate }) {
   // ── Null-guard config before any destructure ────────────────────────────
   const cfg = config || {};
 
@@ -162,22 +162,25 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     await save(K.config, updated);
     setSheetsUrl(sheetsInput);
     onUpdateConfig(updated);
+    if (updated.exchangeKey) getUsdToArs().then(onUsdRateUpdate).catch(() => {});
     showMsg("✓ URL de Sheets guardada");
-  }, [cfg, sheetsInput, onUpdateConfig, showMsg]);
+  }, [cfg, sheetsInput, onUpdateConfig, onUsdRateUpdate, showMsg]);
 
   const saveVendedorConfig = useCallback(async () => {
     const updated = { ...cfg, vendedor: vendedorInput };
     await save(K.config, updated);
     onUpdateConfig(updated);
+    if (updated.exchangeKey) getUsdToArs().then(onUsdRateUpdate).catch(() => {});
     showMsg("✓ Nombre de vendedor guardado");
-  }, [cfg, vendedorInput, onUpdateConfig, showMsg]);
+  }, [cfg, vendedorInput, onUpdateConfig, onUsdRateUpdate, showMsg]);
 
   const saveTNConfig = useCallback(async () => {
     const updated = { ...cfg, tnStoreId, tnToken };
     await save(K.config, updated);
     onUpdateConfig(updated);
+    if (updated.exchangeKey) getUsdToArs().then(onUsdRateUpdate).catch(() => {});
     showMsg("✓ Credenciales de Tienda Nube guardadas");
-  }, [cfg, tnStoreId, tnToken, onUpdateConfig, showMsg]);
+  }, [cfg, tnStoreId, tnToken, onUpdateConfig, onUsdRateUpdate, showMsg]);
 
   const saveApiLayerConfig = useCallback(async () => {
     const updated = { ...cfg, exchangeKey, numverifyKey, mailboxKey, vatKey };
@@ -185,8 +188,9 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     setApiLayerKeys({ exchangeKey, numverifyKey, mailboxKey, vatKey });
     clearRateCache();
     onUpdateConfig(updated);
+    if (updated.exchangeKey) getUsdToArs().then(onUsdRateUpdate).catch(() => {});
     showMsg("✓ Claves APILayer guardadas");
-  }, [cfg, exchangeKey, numverifyKey, mailboxKey, vatKey, onUpdateConfig, showMsg]);
+  }, [cfg, exchangeKey, numverifyKey, mailboxKey, vatKey, onUpdateConfig, onUsdRateUpdate, showMsg]);
 
   const testApiLayerRate = useCallback(async () => {
     setApiTesting(true);

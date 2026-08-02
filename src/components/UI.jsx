@@ -154,7 +154,7 @@ export function SectionCard({ children, title, action, style = {}, onClick }) {
 export function Button({ children, variant = "primary", onClick, disabled, fullWidth = false, size = "md", style = {}, ariaLabel }) {
   const styles = {
     primary: {
-      background: "linear-gradient(135deg, var(--accent-cyan) 0%, #00B4D8 100%)",
+      background: "linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-cyan-dim) 100%)",
       color: "var(--bg-app)",
       fontWeight: 700,
       boxShadow: "var(--shadow-glow)",
@@ -225,13 +225,14 @@ export function SearchInput({ value, onChange, placeholder = "Buscar..." }) {
           paddingRight: value ? 44 : 12,
           height: 48,
           borderRadius: "var(--radius-md)",
-          fontSize: 13,
+          fontSize: 16,
           background: "var(--bg-surface)",
           color: "var(--text-primary)",
-          border: "1px solid var(--border-subtle)"
+          border: "1px solid var(--border-subtle)",
+          transition: "border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease"
         }}
       />
-      <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none", display: "flex" }}>
+      <span aria-hidden='true' style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none", display: "flex" }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>

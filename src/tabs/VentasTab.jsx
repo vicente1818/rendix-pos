@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, memo } from "react";
-import { CANALES, fmt, fmtD } from "../utils/constants.js";
+import { CANALES, formatCurrency, formatDateTime } from "../utils/constants.js";
 import { SectionCard, MetricCard, Badge, EmptyState, SearchInput } from "../components/UI.jsx";
 
 // ─── Pre-defined button style constants (avoid per-render object creation) ───
@@ -144,6 +144,17 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
   // Stable click handler per card — onToggle itself is stable from parent useCallback
   const handleClick = useCallback(() => onToggle(v.id), [onToggle, v.id]);
 
+  const [updating, setUpdating] = useState(false);
+  const [updateErr, setUpdateErr] = useState(null);
+
+  const handleUpdate = useCallback(async (patch) => {
+    setUpdating(true);
+    setUpdateErr(null);
+    try { await onUpdateSale(v.id, patch); }
+    catch { setUpdateErr('Error al actualizar. Intentá de nuevo.'); }
+    finally { setUpdating(false); }
+  }, [onUpdateSale, v.id]);
+
   // Compute discount amount safely: prefer stored value, fall back to derivation
   const discountMonto =
     v.descMonto > 0
@@ -197,7 +208,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
               marginTop: 2,
             }}
           >
-            {v.id} · {fmtD(v.fecha)} · {v.vendedor || "Sin vendedor"}
+            {v.id} · {formatDateTime(v.fecha)} · {v.vendedor || "Sin vendedor"}
             {v.metodo ? (
               <>
                 {" · "}
@@ -222,7 +233,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
                 textShadow: "0 0 8px rgba(0,229,255,0.6)",
               }}
             >
-              {fmt(v.total)}
+              {formatCurrency(v.total)}
             </div>
             <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 2 }}>
               <Badge color="info">{v.canal}</Badge>
@@ -297,7 +308,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
                   flexShrink: 0,
                 }}
               >
-                {fmt(i.subtotal)}
+                {formatCurrency(i.subtotal)}
               </span>
             </div>
           ))}
@@ -313,7 +324,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
                 fontVariantNumeric: "tabular-nums",
               }}
             >
-              DESC {v.descPct}%: -{fmt(discountMonto)}
+              DESC {v.descPct}%: -{formatCurrency(discountMonto)}
             </div>
           )}
 
@@ -340,7 +351,8 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
                     color: "var(--status-danger)",
                     border: "1px solid rgba(239,68,68,0.3)",
                   }}
-                  onClick={() => onUpdateSale(v.id, { estado: "Devuelto" })}
+                  disabled={updating}
+                  onClick={() => handleUpdate({ estado: "Devuelto" })}
                 >
                   Marcar como devuelta
                 </button>
@@ -353,7 +365,8 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
                     color: "var(--status-warning)",
                     border: "1px solid rgba(251,191,36,0.3)",
                   }}
-                  onClick={() => onUpdateSale(v.id, { estado: "Cancelado" })}
+                  disabled={updating}
+                  onClick={() => handleUpdate({ estado: "Cancelado" })}
                 >
                   Cancelar venta
                 </button>
@@ -366,13 +379,15 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
                     color: "var(--status-success)",
                     border: "1px solid rgba(0,255,136,0.2)",
                   }}
-                  onClick={() => onUpdateSale(v.id, { estado: "Confirmado" })}
+                  disabled={updating}
+                  onClick={() => handleUpdate({ estado: "Confirmado" })}
                 >
                   Restaurar a Confirmado
                 </button>
               )}
             </div>
           )}
+          {updateErr && <div style={{color:'var(--status-danger)',fontSize:11,marginTop:4}}>{updateErr}</div>}
         </div>
       )}
     </SectionCard>
@@ -423,6 +438,8 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
   // Includes: canal, full-text search on name/ID/vendor, date range
   const filtered = useMemo(() => {
     const lq = q.trim().toLowerCase();
+    const fromDate = dateFrom ? new Date(dateFrom) : null;
+    const toDate = dateTo ? new Date(dateTo + "T23:59:59") : null;
     return (canal === "Todos" ? sales : sales.filter(s => s.canal === canal))
       .filter(s => {
         // Text search — client name, sale ID, vendor, and all product names in items
@@ -435,8 +452,8 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
         // Date range
         if (dateFrom || dateTo) {
           const d = new Date(s.fecha);
-          if (dateFrom && d < new Date(dateFrom)) return false;
-          if (dateTo && d > new Date(dateTo + "T23:59:59")) return false;
+          if (fromDate && d < fromDate) return false;
+          if (toDate && d > toDate) return false;
         }
         return true;
       })
@@ -559,7 +576,7 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
           >
             <MetricCard
               label="Total Recaudado"
-              val={fmt(tot)}
+              val={formatCurrency(tot)}
               color="var(--accent-cyan)"
             />
           </div>

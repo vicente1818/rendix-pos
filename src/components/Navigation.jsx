@@ -127,10 +127,9 @@ const BTN_BASE = {
   // DESIGN: futuristic rule — structural elements must not exceed 4px corner radius
   borderRadius: 4,
   // UX: smooth 150ms ease on all state changes (was: instantaneous hard cut)
-  transition: "color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease",
+  transition: "color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s cubic-bezier(0.34,1.56,0.64,1)",
   // DESIGN: Roboto for UI labels per futuristic skill
   fontFamily: "'Roboto', system-ui, sans-serif",
-  outline: "none",
   WebkitTapHighlightColor: "transparent",
 };
 
@@ -144,6 +143,7 @@ const BTN_STYLE_ACTIVE = {
   border: "1px solid var(--border-accent)",
   // DESIGN: active accent must emit light, not merely tint background (Circuit Noir)
   boxShadow: "0 0 12px rgba(0, 229, 255, 0.35), inset 0 0 8px rgba(0, 229, 255, 0.1)",
+  transform: "scale(1.05)",
 };
 
 const BTN_STYLE_INACTIVE = {
@@ -262,12 +262,18 @@ export const Navigation = memo(function Navigation({
             // BUG FIX: role="tab" is now valid — parent nav has role="tablist"
             role="tab"
             aria-selected={isActive}
-            aria-label={t.label}
+            aria-label={
+              t.badgeType === 'cart' && cartCount > 0
+                ? t.label + ' — ' + cartCount + ' artículos en carrito'
+                : t.badgeType === 'stock' && stockAlerts > 0
+                ? t.label + ' — ' + stockAlerts + ' productos con stock bajo'
+                : t.label
+            }
             className="tactile-btn"
             // PERF: ternary selects a pre-defined object — no new object allocated per tab
             style={isActive ? BTN_STYLE_ACTIVE : BTN_STYLE_INACTIVE}
           >
-            <span style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span aria-hidden='true' style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
               {t.icon}
             </span>
             <span style={isActive ? LABEL_ACTIVE : LABEL_INACTIVE}>
@@ -275,6 +281,7 @@ export const Navigation = memo(function Navigation({
             </span>
             {badge !== null && (
               <span
+                key={cartCount}
                 style={badgeStyle}
                 className={badgeClassName}
                 aria-label={badgeAriaLabel}

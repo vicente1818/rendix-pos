@@ -17,8 +17,10 @@ export async function postToSheets(type, payload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type, ...payload }),
     });
+    return true;
   } catch (e) {
     console.warn("Sheets POST warning:", e);
+    return false;
   }
 }
 

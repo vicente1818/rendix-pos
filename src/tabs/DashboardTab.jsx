@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CANALES, fmt } from "../utils/constants.js";
+import { CANALES, formatCurrency } from "../utils/constants.js";
 import { StockBadge } from "../components/UI.jsx";
 import { Sparkline, ChannelDistributionBar, HourlyChart } from "../components/AnalyticsCharts.jsx";
 
@@ -34,6 +34,7 @@ const localMs = (v) => {
 export function DashboardTab({ sales = [], products = [] }) {
   const [range, setRange]       = useState("today");
   const [exportMsg, setExportMsg] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   // Midnight today in local tz — bucket key shared across all date math
   const todayMs = localMs(new Date());
@@ -195,27 +196,30 @@ export function DashboardTab({ sales = [], products = [] }) {
 
   // ── Export: WhatsApp-ready plain-text summary ────────────────────────────
   const handleExport = () => {
+    if (exporting) return;
+    setExporting(true);
     const label = RANGE_OPTS.find(o => o.key === range)?.label ?? "Hoy";
     const lines = [
       `*RENDIX POS · Resumen ${label}*`,
       ``,
       `Ventas: ${sRange.length}`,
-      `Facturacion: ${fmt(totRange)}`,
-      sRange.length > 0 ? `Ticket promedio: ${fmt(ticketPromedio)}` : null,
-      margenBruto !== null ? `Margen bruto est.: ${fmt(margenBruto)}` : null,
+      `Facturacion: ${formatCurrency(totRange)}`,
+      sRange.length > 0 ? `Ticket promedio: ${formatCurrency(ticketPromedio)}` : null,
+      margenBruto !== null ? `Margen bruto est.: ${formatCurrency(margenBruto)}` : null,
       topCliente ? `Cliente frecuente: ${topCliente.nombre} (${topCliente.count} compras)` : null,
       top.length > 0
-        ? `\nTop productos:\n${top.map(([n, d], i) => `${i + 1}. ${n} - ${d.qty} unid. - ${fmt(d.total)}`).join("\n")}`
+        ? `\nTop productos:\n${top.map(([n, d], i) => `${i + 1}. ${n} - ${d.qty} unid. - ${formatCurrency(d.total)}`).join("\n")}`
         : null,
       alertas.length > 0 ? `\nAlertas de stock: ${alertas.length} productos` : null,
     ].filter(Boolean).join("\n");
 
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(lines)
-        .then(() => { setExportMsg("Copiado al portapapeles"); setTimeout(() => setExportMsg(""), 2500); })
-        .catch(() => { setExportMsg("Error al copiar"); setTimeout(() => setExportMsg(""), 2500); });
+        .then(() => { setExportMsg("Copiado al portapapeles"); setExporting(false); setTimeout(() => setExportMsg(""), 2500); })
+        .catch(() => { setExportMsg("Error al copiar"); setExporting(false); setTimeout(() => setExportMsg(""), 2500); });
     } else {
       setExportMsg("Sin soporte de clipboard");
+      setExporting(false);
       setTimeout(() => setExportMsg(""), 2500);
     }
   };
@@ -342,9 +346,10 @@ export function DashboardTab({ sales = [], products = [] }) {
             <button
               className="rng-btn"
               onClick={handleExport}
+              disabled={exporting}
               title="Copiar resumen listo para WhatsApp"
             >
-              Exportar
+              {exporting ? 'Copiando...' : 'Exportar'}
             </button>
           </div>
         </div>
@@ -371,7 +376,7 @@ export function DashboardTab({ sales = [], products = [] }) {
               fontFamily: "'JetBrains Mono', monospace",
               textShadow: "0 0 10px rgba(0,229,255,0.4)",
             }}>
-              {fmt(totRange)}
+              {formatCurrency(totRange)}
             </div>
           </div>
 
@@ -387,7 +392,7 @@ export function DashboardTab({ sales = [], products = [] }) {
           }}>
             <span style={labelCss}>Total Histórico</span>
             <div style={mono("var(--accent-green,#00FF88)", "rgba(0,255,136,0.5)")}>
-              {fmt(totGral)}
+              {formatCurrency(totGral)}
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
               {sales.length} ventas registradas
@@ -422,13 +427,13 @@ export function DashboardTab({ sales = [], products = [] }) {
             padding: "12px 14px",
             display: "flex", flexDirection: "column", gap: 4,
             boxShadow: alertas.length > 0
-              ? "0 0 12px rgba(255,170,0,0.2)"
+              ? "0 0 12px rgba(245,158,11,0.2)"
               : "var(--shadow-sm)",
           }}>
             <span style={labelCss}>Alertas Stock</span>
             <div style={mono(
               alertas.length > 0 ? "var(--status-warning)" : "var(--status-success)",
-              alertas.length > 0 ? "rgba(255,170,0,0.5)" : undefined,
+              alertas.length > 0 ? "rgba(245,158,11,0.5)" : undefined,
             )}>
               {alertas.length}
             </div>
@@ -457,7 +462,7 @@ export function DashboardTab({ sales = [], products = [] }) {
               color: "var(--accent-cyan)",
               fontFamily: "'JetBrains Mono', monospace",
             }}>
-              {sRange.length > 0 ? fmt(ticketPromedio) : "—"}
+              {sRange.length > 0 ? formatCurrency(ticketPromedio) : "—"}
             </div>
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{rangeLabel}</div>
           </div>
@@ -479,7 +484,7 @@ export function DashboardTab({ sales = [], products = [] }) {
                 color: "var(--accent-purple,#8B5CF6)",
                 fontFamily: "'JetBrains Mono', monospace",
               }}>
-                {fmt(margenBruto)}
+                {formatCurrency(margenBruto)}
               </div>
               <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                 {rangeLabel} · sobre costo
@@ -534,7 +539,7 @@ export function DashboardTab({ sales = [], products = [] }) {
                   fontFamily: "'JetBrains Mono', monospace",
                   textShadow: "0 0 12px rgba(0,229,255,0.6)",
                 }}>
-                  {fmt(tot7d)}
+                  {formatCurrency(tot7d)}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
                   Últimos 7 días
@@ -646,7 +651,7 @@ export function DashboardTab({ sales = [], products = [] }) {
                   color: "var(--text-secondary)",
                   whiteSpace: "nowrap",
                 }}>
-                  {d.qty} unid. &middot; {fmt(d.total)}
+                  {d.qty} unid. &middot; {formatCurrency(d.total)}
                 </span>
               </div>
             );

@@ -1,6 +1,6 @@
 import { useMercadoPagoQR } from "../hooks/useMercadoPagoQR.js";
 import { Button, SectionCard } from "./UI.jsx";
-import { fmt } from "../utils/constants.js";
+import { formatCurrency } from "../utils/constants.js";
 
 export function MercadoPagoQRModal({ posOrderId, totalAmount, items, onClose, onPaymentSuccess }) {
   const {
@@ -39,7 +39,7 @@ export function MercadoPagoQRModal({ posOrderId, totalAmount, items, onClose, on
           Mercado Pago QR Dinámico
         </div>
         <div style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
-          Orden #{posOrderId} · Total: <span style={{ color: "var(--accent-cyan)", fontWeight: 700 }}>{fmt(totalAmount)}</span>
+          Orden #{posOrderId} · Total: <span style={{ color: "var(--accent-cyan)", fontWeight: 700 }}>{formatCurrency(totalAmount)}</span>
         </div>
 
         {status === 'IDLE' && (

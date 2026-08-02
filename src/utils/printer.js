@@ -1,4 +1,4 @@
-import { fmt, fmtD } from "./constants.js";
+import { formatCurrency, formatDateTime } from "./constants.js";
 
 export function generateEscPosBytes(sale, paperColumns = 48) {
   const bytes = [];
@@ -22,7 +22,7 @@ export function generateEscPosBytes(sale, paperColumns = 48) {
   bytes.push(0x1D, 0x21, 0x00);
   appendText("High Performance Nutrition\n");
   appendText(`Ticket #${sale.id}\n`);
-  appendText(`${fmtD(sale.fecha)}\n`);
+  appendText(`${formatDateTime(sale.fecha)}\n`);
   appendText("-".repeat(paperColumns) + "\n");
 
   // Align Left
@@ -33,14 +33,14 @@ export function generateEscPosBytes(sale, paperColumns = 48) {
 
   (sale.items || []).forEach(i => {
     const left = `${i.qty}x ${i.nombre}`;
-    const right = fmt(i.subtotal);
+    const right = formatCurrency(i.subtotal);
     const space = Math.max(1, paperColumns - left.length - right.length);
     appendText(left + " ".repeat(space) + right + "\n");
   });
 
   appendText("-".repeat(paperColumns) + "\n");
   if (sale.descPct > 0) {
-    const descStr = `Descuento ${sale.descPct}%: -${fmt(sale.descMonto)}`;
+    const descStr = `Descuento ${sale.descPct}%: -${formatCurrency(sale.descMonto)}`;
     appendText(descStr + "\n");
   }
 
@@ -50,7 +50,7 @@ export function generateEscPosBytes(sale, paperColumns = 48) {
   bytes.push(0x1B, 0x45, 0x01);
   // 2x Large
   bytes.push(0x1D, 0x21, 0x11);
-  appendText(`TOTAL: ${fmt(sale.total)}\n`);
+  appendText(`TOTAL: ${formatCurrency(sale.total)}\n`);
 
   // Bold OFF, Normal size
   bytes.push(0x1B, 0x45, 0x00);

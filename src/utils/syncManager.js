@@ -37,21 +37,25 @@ export async function queueOrSyncAction(type, payload) {
 export async function flushSyncQueue() {
   if (!navigator.onLine) return;
 
-  const pending = await db.syncQueue.where("status").equals("pending").toArray();
-  if (pending.length === 0) return;
+  try {
+    const pending = await db.syncQueue.where("status").equals("pending").toArray();
+    if (!pending.length) return;
 
-  console.log(`[SyncManager] Flushing ${pending.length} pending actions...`);
+    console.log(`[SyncManager] Flushing ${pending.length} pending actions...`);
 
-  for (const item of pending) {
-    try {
-      const ok = await postToSheets(item.action, item.payload);
-      if (ok) {
-        await db.syncQueue.delete(item.id);
-        console.log(`[SyncManager] Action ${item.id} synced successfully.`);
+    for (const item of pending) {
+      try {
+        const ok = await postToSheets(item.action, item.payload);
+        if (ok) {
+          await db.syncQueue.delete(item.id);
+          console.log(`[SyncManager] Action ${item.id} synced successfully.`);
+        }
+      } catch (err) {
+        console.warn(`[SyncManager] Retry failed for ${item.id}:`, err);
       }
-    } catch (err) {
-      console.warn(`[SyncManager] Retry failed for ${item.id}:`, err);
     }
+  } catch (e) {
+    console.error('[SyncManager] flushSyncQueue IndexedDB error:', e);
   }
 }
 
@@ -61,10 +65,10 @@ export async function flushSyncQueue() {
 export function initSyncManager() {
   window.addEventListener("online", () => {
     console.log("[SyncManager] Network restored. Flushing outbox queue...");
-    flushSyncQueue();
+    flushSyncQueue().catch(e => console.error('[SyncManager] flush failed:', e));
   });
 
   if (navigator.onLine) {
-    flushSyncQueue();
+    flushSyncQueue().catch(e => console.error('[SyncManager] flush failed:', e));
   }
 }

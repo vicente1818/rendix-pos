@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { initDatabase, getDbProducts, saveDbProducts, getDbSales, saveDbSale, putDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
+import { initDatabase, seedDemoProductsIfEmpty, getDbProducts, saveDbProducts, getDbSales, saveDbSale, putDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
 import { setSheetsUrl } from "./utils/sheets.js";
 import { autoFixProductImages } from "./utils/imageMatcher.js";
 import { setApiLayerKeys, getUsdToArs } from "./utils/apilayer.js";
@@ -31,14 +31,11 @@ export default function App() {
   useEffect(() => {
     async function init() {
       await initDatabase();
+      await seedDemoProductsIfEmpty();
       const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "", exchangeKey: "", numverifyKey: "", mailboxKey: "", vatKey: "" };
-      const prods = await getDbProducts();
+      const [prods, sls] = await Promise.all([getDbProducts(), getDbSales()]);
       const fixedProds = autoFixProductImages(prods);
-      
-      // Auto-save repaired image paths to IndexedDB
       await saveDbProducts(fixedProds);
-
-      const sls = await getDbSales();
 
       setConfig(cfg);
       if (cfg.sheetsUrl) setSheetsUrl(cfg.sheetsUrl);
@@ -71,14 +68,11 @@ export default function App() {
     setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
   };
 
-  const handleUpdateSale = (id, update) => {
-    setSales(prev => {
-      const updated = prev.map(s => s.id === id ? { ...s, ...update } : s);
-      // Persist the mutation via upsert so the updated estado survives reload.
-      const target = updated.find(s => s.id === id);
-      if (target) putDbSale(target).catch(console.error);
-      return updated;
-    });
+  const handleUpdateSale = async (id, patch) => {
+    const next = sales.map(s => s.id === id ? { ...s, ...patch } : s);
+    const target = next.find(s => s.id === id);
+    setSales(next);
+    await putDbSale(target);
   };
 
   const updateProductsState = async (newProducts) => {
@@ -90,9 +84,6 @@ export default function App() {
     setConfig(newConfig);
     await setDbConfig("appConfig", newConfig);
     setApiLayerKeys({ exchangeKey: newConfig.exchangeKey, numverifyKey: newConfig.numverifyKey, mailboxKey: newConfig.mailboxKey, vatKey: newConfig.vatKey });
-    if (newConfig.exchangeKey) {
-      getUsdToArs().then(setUsdRate).catch(() => {});
-    }
   };
 
   const stockAlertsCount = products.filter(p => p.stock <= p.stockMin).length;
@@ -188,6 +179,7 @@ export default function App() {
             onUpdateProducts={updateProductsState}
             config={config}
             onUpdateConfig={updateConfigState}
+            onUsdRateUpdate={setUsdRate}
           />
         )}
       </main>

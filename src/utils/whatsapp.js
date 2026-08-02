@@ -1,4 +1,4 @@
-import { fmt, fmtD } from "./constants.js";
+import { formatCurrency, formatDateTime } from "./constants.js";
 
 /**
  * Normalise an Argentine phone number to the E.164 wa.me format (no + sign).
@@ -33,7 +33,7 @@ export function formatArgentinePhone(rawPhone) {
  */
 export function generateWhatsAppReceiptText(sale) {
   const itemLines = (sale.items || []).map(
-    i => `• *${i.qty}x* ${i.nombre}\n  └ Subtotal: *${fmt(i.subtotal)}*`
+    i => `• *${i.qty}x* ${i.nombre}\n  └ Subtotal: *${formatCurrency(i.subtotal)}*`
   ).join("\n");
 
   const markdown = 
@@ -41,13 +41,13 @@ export function generateWhatsAppReceiptText(sale) {
     `_Comprobante Digital de Venta_\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     `📄 *Ticket:* \`\`\`#${sale.id}\`\`\`\n` +
-    `📅 *Fecha:* ${fmtD(sale.fecha)}\n` +
+    `📅 *Fecha:* ${formatDateTime(sale.fecha)}\n` +
     `👤 *Cliente:* ${sale.cli?.nombre || "Mostrador"}\n` +
     `💳 *Pago:* ${sale.metodo} (Canal: ${sale.canal})\n\n` +
     `🛒 *DETALLE DE PRODUCTOS:*\n${itemLines}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-    (sale.descPct > 0 ? `💰 *Descuento (${sale.descPct}%):* -${fmt(sale.descMonto)}\n` : "") +
-    `💵 *TOTAL PAGADO:* *${fmt(sale.total)}*\n\n` +
+    (sale.descPct > 0 ? `💰 *Descuento (${sale.descPct}%):* -${formatCurrency(sale.descMonto)}\n` : "") +
+    `💵 *TOTAL PAGADO:* *${formatCurrency(sale.total)}*\n\n` +
     `¡Muchas gracias por su compra! 💪`;
 
   return markdown;
@@ -62,7 +62,7 @@ export function generateWhatsAppReceiptLink(sale) {
 
 export function generateWhatsAppQuoteText(cart, descPct, total, cli) {
   const itemLines = cart.map(
-    i => `• *${i.qty}x* ${i.nombre} ── *${fmt(i.precio * i.qty)}*`
+    i => `• *${i.qty}x* ${i.nombre} ── *${formatCurrency(i.precio * i.qty)}*`
   ).join("\n");
 
   return (
@@ -71,7 +71,7 @@ export function generateWhatsAppQuoteText(cart, descPct, total, cli) {
     `📋 *PRODUCTOS:*\n${itemLines}\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
     (descPct > 0 ? `🏷️ *Descuento Aplicado:* ${descPct}%\n` : "") +
-    `💰 *TOTAL ESTIMADO:* *${fmt(total)}*\n\n` +
+    `💰 *TOTAL ESTIMADO:* *${formatCurrency(total)}*\n\n` +
     `⏱️ _Presupuesto válido por 24hs._`
   );
 }
