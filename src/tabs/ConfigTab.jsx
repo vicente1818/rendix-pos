@@ -7,6 +7,7 @@ import { fetchFromTiendaNube, mergeTNProducts } from "../utils/tiendanube.js";
 import { exportVentas, exportProductos, exportClientes, importCatalogFromCSV } from "../utils/csv.js";
 import { Button, SectionCard } from "../components/UI.jsx";
 import { FARMA_CATALOG, mergeFarmaIntoExistingCatalog } from "../data/farma-catalog.js";
+import pkg from "../../package.json";
 
 // ── Module-level constants — allocated once, never on re-render ──────────────
 const ADD_PRODUCT_FIELDS = [
@@ -816,6 +817,18 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
           Guardar Nombre Vendedor
         </Button>
       </SectionCard>
+
+      {/* ── VERSION FOOTER ────────────────────────────────────────────────── */}
+      <div style={{
+        textAlign: "center",
+        padding: "12px 0 4px",
+        fontSize: 11,
+        fontFamily: "'JetBrains Mono', monospace",
+        letterSpacing: "0.15em",
+        color: "rgba(56,80,110,0.9)",
+      }}>
+        RENDIX POS v{pkg.version}
+      </div>
     </div>
   );
 }

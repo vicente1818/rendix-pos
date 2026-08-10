@@ -25,6 +25,20 @@ export function exportProductos(products) {
   downloadCSV([header, ...rows], `rendix-productos-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
+export function exportVentasSummary(sales) {
+  const today = new Date().toISOString().slice(0, 10);
+  const header = ["Fecha", "Hora", "Vendedor", "Productos", "Cantidad items", "Total"];
+  const rows = sales.map(v => {
+    const d = new Date(v.fecha);
+    const fecha = d.toLocaleDateString("es-AR");
+    const hora = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+    const productos = (v.items || []).map(i => `${i.qty}x ${i.nombre}`).join(" | ");
+    const cantItems = (v.items || []).reduce((s, i) => s + (i.qty || 0), 0);
+    return [fecha, hora, v.vendedor || "", productos, cantItems, v.total];
+  });
+  downloadCSV([header, ...rows], `ventas_${today}.csv`);
+}
+
 export function exportClientes(sales) {
   const map = {};
   sales.forEach(s => {

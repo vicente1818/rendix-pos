@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback, memo } from "react";
 import { CANALES, formatCurrency, formatDateTime } from "../utils/constants.js";
 import { SectionCard, MetricCard, Badge, EmptyState, SearchInput } from "../components/UI.jsx";
+import { printSaleReceipt } from "../utils/printer.js";
+import { exportVentasSummary } from "../utils/csv.js";
 
 // ─── Pre-defined button style constants (avoid per-render object creation) ───
 const BTN_BASE = {
@@ -388,6 +390,24 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
             </div>
           )}
           {updateErr && <div style={{color:'var(--status-danger)',fontSize:11,marginTop:4}}>{updateErr}</div>}
+
+          {/* ── Print receipt ── */}
+          <div
+            style={{ display: "flex", marginTop: 8 }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              style={{
+                ...BTN_ACTION_BASE,
+                background: "rgba(0,229,255,0.06)",
+                color: "var(--accent-cyan)",
+                border: "1px solid rgba(0,229,255,0.25)",
+              }}
+              onClick={() => printSaleReceipt(v)}
+            >
+              🖨️ Imprimir
+            </button>
+          </div>
         </div>
       )}
     </SectionCard>
@@ -581,6 +601,24 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
             />
           </div>
         </div>
+
+        {/* ── Export button ── */}
+        {filtered.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={() => exportVentasSummary(filtered)}
+              style={{
+                ...BTN_QUICK,
+                color: "var(--accent-cyan)",
+                borderColor: "rgba(0,229,255,0.35)",
+                background: "rgba(0,229,255,0.06)",
+              }}
+              title="Descargar ventas visibles como .csv"
+            >
+              Exportar Excel
+            </button>
+          </div>
+        )}
 
         {/* ── Loading skeletons ── */}
         {loading && (

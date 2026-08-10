@@ -182,6 +182,11 @@ export function DashboardTab({ sales = [], products = [] }) {
     [products, productosConVentas],
   );
 
+  const stockBajo = useMemo(
+    () => products.filter(p => p.stock <= 5),
+    [products],
+  );
+
   // ── Ventas por hora del día (range-filtered) ─────────────────────────────
   const salesByHour = useMemo(() => {
     const hours = new Array(24).fill(0);
@@ -358,7 +363,7 @@ export function DashboardTab({ sales = [], products = [] }) {
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", ...fade(1) }}>
 
           {/* Ventas del período — cyan accent */}
-          <div className="kpi-card" style={{
+          <div className="kpi-card glass-card" style={{
             ...glass,
             flex: 1, minWidth: 120,
             border: "1px solid var(--accent-cyan)",
@@ -381,7 +386,7 @@ export function DashboardTab({ sales = [], products = [] }) {
           </div>
 
           {/* Total histórico — green accent */}
-          <div className="kpi-card" style={{
+          <div className="kpi-card glass-card" style={{
             ...glass,
             flex: 1, minWidth: 120,
             border: "1px solid rgba(0,255,136,0.35)",
@@ -404,7 +409,7 @@ export function DashboardTab({ sales = [], products = [] }) {
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", ...fade(2) }}>
 
           {/* Clientes identificados */}
-          <div className="kpi-card" style={{
+          <div className="kpi-card glass-card" style={{
             ...glass,
             flex: 1, minWidth: 120,
             border: "1px solid var(--border-subtle)",
@@ -419,7 +424,7 @@ export function DashboardTab({ sales = [], products = [] }) {
           </div>
 
           {/* Alertas de stock */}
-          <div className="kpi-card" style={{
+          <div className="kpi-card glass-card" style={{
             ...glass,
             flex: 1, minWidth: 120,
             border: `1px solid ${alertas.length > 0 ? "var(--status-warning)" : "var(--border-subtle)"}`,
@@ -707,6 +712,77 @@ export function DashboardTab({ sales = [], products = [] }) {
                   }}>
                     {p.sku} · stock {p.stock}
                   </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Stock bajo — warning accent (hidden when no low-stock products) ─ */}
+        {stockBajo.length > 0 && (
+          <div style={{
+            ...glass,
+            border: "1px solid var(--status-warning)",
+            borderLeft: "3px solid var(--status-warning)",
+            borderRadius: "var(--radius-md)",
+            padding: "14px 16px",
+            boxShadow: "0 0 10px rgba(245,158,11,0.12)",
+            ...fade(9),
+          }}>
+            <div style={{
+              ...sHead(),
+              color: "var(--status-warning)",
+            }}>
+              ⚠️ Stock Bajo ({stockBajo.length})
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0, maxHeight: 220, overflowY: "auto" }}>
+              {stockBajo.map((p, i) => (
+                <div key={p.sku} style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontSize: 12,
+                  padding: "8px 0",
+                  borderBottom: i < stockBajo.length - 1 ? "1px dashed var(--border-subtle)" : "none",
+                  minHeight: 44,
+                  gap: 8,
+                }}>
+                  <span style={{
+                    flex: 1,
+                    fontWeight: 500,
+                    color: "var(--text-primary)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {p.nombre}
+                  </span>
+                  <span style={{
+                    fontWeight: 700,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 12,
+                    color: "var(--status-warning)",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {p.stock} en stock
+                  </span>
+                  <button
+                    onClick={() => {}}
+                    className="tactile-btn"
+                    style={{
+                      padding: "4px 10px",
+                      fontSize: 11,
+                      minHeight: 30,
+                      borderRadius: "var(--radius-sm)",
+                      background: "rgba(245,158,11,0.1)",
+                      color: "var(--status-warning)",
+                      border: "1px solid rgba(245,158,11,0.35)",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Reponer
+                  </button>
                 </div>
               ))}
             </div>

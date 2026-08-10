@@ -29,7 +29,20 @@ export default function App() {
   const [cli, setCli] = useState({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
 
   useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "F2") { e.preventDefault(); setActiveTab("venta"); }
+      else if (e.key === "F3") { e.preventDefault(); setActiveTab("ventas"); }
+      else if (e.key === "F4") { e.preventDefault(); setActiveTab("dashboard"); }
+      else if (e.key === "F5") { e.preventDefault(); setActiveTab("catalogo"); }
+      else if (e.key === "Escape") { document.activeElement?.blur(); }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => {
     async function init() {
+      const t0 = performance.now();
       await initDatabase();
       await seedDemoProductsIfEmpty();
       const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "", exchangeKey: "", numverifyKey: "", mailboxKey: "", vatKey: "" };
@@ -43,6 +56,7 @@ export default function App() {
       setProducts(fixedProds);
       setSales(sls);
       setLoaded(true);
+      console.debug(`RENDIX init: ${(performance.now() - t0).toFixed(0)}ms`);
       // Fetch USD/ARS rate in background if key configured
       if (cfg.exchangeKey) {
         getUsdToArs().then(setUsdRate).catch(() => {});
@@ -87,7 +101,8 @@ export default function App() {
   };
 
   const stockAlertsCount = products.filter(p => p.stock <= p.stockMin).length;
-  const cartItemCount = cart.reduce((sum, item) => sum + item.qty, 0);
+  const lowStockCount    = products.filter(p => p.stock <= 5).length;
+  const cartItemCount    = cart.reduce((sum, item) => sum + item.qty, 0);
 
   if (!loaded) {
     return (
@@ -189,6 +204,7 @@ export default function App() {
         onTabChange={setActiveTab}
         cartCount={cartItemCount}
         stockAlerts={stockAlertsCount}
+        catalogoLowStock={lowStockCount}
       />
     </div>
   );

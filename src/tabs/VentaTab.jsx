@@ -701,6 +701,32 @@ export function VentaTab({
             <span>Subtotal</span>
             <span style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.4)" }}>{formatCurrency(subtotal)}</span>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
+            <label htmlFor="vt-disc-pct-inline" style={{ fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              Descuento %
+            </label>
+            <input
+              type="number"
+              id="vt-disc-pct-inline"
+              min={0}
+              max={100}
+              value={descPct}
+              onChange={e => setDescPct(Math.min(100, Math.max(0, +e.target.value || 0)))}
+              className="input-dark"
+              style={{ width: 80, padding: "6px 8px", fontSize: 14, textAlign: "right", minHeight: 36 }}
+            />
+          </div>
+          {descPct > 0 && (
+            <>
+              <div style={{ fontSize: 13, color: "var(--color-accent-green, var(--status-success, #00FF88))", marginTop: 6, fontWeight: 600, fontFamily: MONO }} className="tabular-nums">
+                Ahorro: {formatCurrency(descMonto)}
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 16, fontFamily: MONO, marginTop: 6 }} className="tabular-nums">
+                <span>TOTAL</span>
+                <span style={{ color: "var(--accent-cyan)", textShadow: "0 0 8px rgba(0,229,255,0.4)" }}>{formatCurrency(total)}</span>
+              </div>
+            </>
+          )}
         </SectionCard>
       )}
 

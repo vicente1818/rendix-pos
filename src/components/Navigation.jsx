@@ -78,7 +78,7 @@ const ICON_CONFIG    = <IconConfig />;
 // No prop-derived data here; safe to hoist and never rebuilt (PERF)
 const TABS_CONFIG = [
   { id: "venta",     label: "Venta",    icon: ICON_VENTA,     badgeType: "cart" },
-  { id: "catalogo",  label: "Catálogo", icon: ICON_CATALOGO },
+  { id: "catalogo",  label: "Catálogo", icon: ICON_CATALOGO, badgeType: "catalogo-low" },
   { id: "ventas",    label: "Ventas",   icon: ICON_VENTAS },
   { id: "clientes",  label: "Clientes", icon: ICON_CLIENTES },
   { id: "dashboard", label: "Métricas", icon: ICON_DASHBOARD, badgeType: "stock" },
@@ -211,9 +211,10 @@ const BADGE_CRITICAL = {
 export const Navigation = memo(function Navigation({
   activeTab,
   onTabChange,
-  cartCount    = 0,     // BUG FIX: default 0 — undefined > 0 was silently false
-  stockAlerts  = 0,     // BUG FIX: default 0 — same silent false issue
-  criticalStock = false, // When true, stock badge turns red and pulses
+  cartCount        = 0,     // BUG FIX: default 0 — undefined > 0 was silently false
+  stockAlerts      = 0,     // BUG FIX: default 0 — same silent false issue
+  criticalStock    = false, // When true, stock badge turns red and pulses
+  catalogoLowStock = 0,     // Count of products with stock <= 5 for Catálogo badge
 }) {
   const { hapticTab } = useHaptic();
 
@@ -253,6 +254,10 @@ export const Navigation = memo(function Navigation({
           // DESIGN: pulse-red class triggers the CSS animation for critical stock
           badgeClassName = criticalStock ? "pulse-red" : undefined;
           badgeAriaLabel = `${stockAlerts} alerta${stockAlerts !== 1 ? "s" : ""} de stock${criticalStock ? " crítico" : ""}`;
+        } else if (t.badgeType === "catalogo-low" && catalogoLowStock > 0) {
+          badge          = catalogoLowStock >= 100 ? "99+" : catalogoLowStock;
+          badgeStyle     = BADGE_CRITICAL;
+          badgeAriaLabel = `${catalogoLowStock} producto${catalogoLowStock !== 1 ? "s" : ""} con stock bajo`;
         }
 
         return (

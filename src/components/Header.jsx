@@ -39,6 +39,23 @@ export function Header({
       <div style={{position:"absolute",top:6,left:6,width:10,height:10,borderTop:"1px solid var(--border-accent)",borderLeft:"1px solid var(--border-accent)",pointerEvents:"none"}} />
       <div style={{position:"absolute",top:6,right:6,width:10,height:10,borderTop:"1px solid var(--border-accent)",borderRight:"1px solid var(--border-accent)",pointerEvents:"none"}} />
 
+      {/* Keyboard shortcut hint — centered, unobtrusive */}
+      <div style={{
+        position: "absolute",
+        left: "50%",
+        transform: "translateX(-50%)",
+        fontSize: 10,
+        opacity: 0.4,
+        color: "var(--text-muted)",
+        fontFamily: "var(--font-mono, monospace)",
+        letterSpacing: "0.08em",
+        whiteSpace: "nowrap",
+        pointerEvents: "none",
+        userSelect: "none",
+      }}>
+        F2 Venta · F3 Historial · F4 Dashboard
+      </div>
+
       {/* Brand mark + operator info */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div className="cn-glow-pulse" style={{
