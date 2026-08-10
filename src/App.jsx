@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { initDatabase, seedDemoProductsIfEmpty, getDbProducts, saveDbProducts, getDbSales, saveDbSale, putDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
 import { setSheetsUrl } from "./utils/sheets.js";
 import { autoFixProductImages } from "./utils/imageMatcher.js";
 import { setApiLayerKeys, getUsdToArs } from "./utils/apilayer.js";
 import { Header } from "./components/Header.jsx";
 import { Navigation } from "./components/Navigation.jsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { useCart } from "./hooks/useCart.js";
 import { VentaTab } from "./tabs/VentaTab.jsx";
 import { CatalogoTab } from "./tabs/CatalogoTab.jsx";
 import { VentasTab } from "./tabs/VentasTab.jsx";
@@ -21,12 +23,8 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [usdRate, setUsdRate] = useState(null);
 
-  // Global Cart State (Preserved across tab switches)
-  const [cart, setCart] = useState([]);
-  const [descPct, setDescPct] = useState(0);
-  const [canal, setCanal] = useState("Instagram");
-  const [metodo, setMetodo] = useState("Transferencia");
-  const [cli, setCli] = useState({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
+  // Cart state is isolated in a custom hook; preserved across tab switches.
+  const { cart, setCart, descPct, setDescPct, canal, setCanal, metodo, setMetodo, cli, setCli, clearCart } = useCart();
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -81,9 +79,7 @@ export default function App() {
     }
     setSales(prev => [newSale, ...prev]);
     setProducts(updatedProducts);
-    setCart([]);
-    setDescPct(0);
-    setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
+    clearCart();
   };
 
   const handleUpdateSale = async (id, patch) => {
@@ -104,9 +100,17 @@ export default function App() {
     setApiLayerKeys({ exchangeKey: newConfig.exchangeKey, numverifyKey: newConfig.numverifyKey, mailboxKey: newConfig.mailboxKey, vatKey: newConfig.vatKey });
   };
 
-  const stockAlertsCount = products.filter(p => p.stock <= p.stockMin).length;
-  const lowStockCount    = products.filter(p => p.stock <= 5).length;
-  const cartItemCount    = cart.reduce((sum, item) => sum + item.qty, 0);
+  // Single pass over products instead of two separate filter() calls.
+  const { stockAlertsCount, lowStockCount } = useMemo(() => {
+    let alerts = 0, low = 0;
+    for (const p of products) {
+      if (p.stock <= p.stockMin) alerts++;
+      if (p.stock <= 5) low++;
+    }
+    return { stockAlertsCount: alerts, lowStockCount: low };
+  }, [products]);
+
+  const cartItemCount = useMemo(() => cart.reduce((sum, item) => sum + item.qty, 0), [cart]);
 
   if (!loaded) {
     return (
@@ -162,44 +166,56 @@ export default function App() {
 
       <main style={{ flex: 1, paddingBottom: 16 }}>
         {activeTab === "venta" && (
-          <VentaTab
-            products={products}
-            onSaleDone={handleSaleDone}
-            vendedor={config.vendedor}
-            cart={cart}
-            setCart={setCart}
-            descPct={descPct}
-            setDescPct={setDescPct}
-            canal={canal}
-            setCanal={setCanal}
-            metodo={metodo}
-            setMetodo={setMetodo}
-            cli={cli}
-            setCli={setCli}
-            usdRate={usdRate}
-          />
+          <ErrorBoundary>
+            <VentaTab
+              products={products}
+              onSaleDone={handleSaleDone}
+              vendedor={config.vendedor}
+              cart={cart}
+              setCart={setCart}
+              descPct={descPct}
+              setDescPct={setDescPct}
+              canal={canal}
+              setCanal={setCanal}
+              metodo={metodo}
+              setMetodo={setMetodo}
+              cli={cli}
+              setCli={setCli}
+              usdRate={usdRate}
+            />
+          </ErrorBoundary>
         )}
         {activeTab === "catalogo" && (
-          <CatalogoTab products={products} onUpdate={updateProductsState} />
+          <ErrorBoundary>
+            <CatalogoTab products={products} onUpdate={updateProductsState} />
+          </ErrorBoundary>
         )}
         {activeTab === "ventas" && (
-          <VentasTab sales={sales} onUpdateSale={handleUpdateSale} />
+          <ErrorBoundary>
+            <VentasTab sales={sales} onUpdateSale={handleUpdateSale} />
+          </ErrorBoundary>
         )}
         {activeTab === "clientes" && (
-          <ClientesTab sales={sales} />
+          <ErrorBoundary>
+            <ClientesTab sales={sales} />
+          </ErrorBoundary>
         )}
         {activeTab === "dashboard" && (
-          <DashboardTab sales={sales} products={products} />
+          <ErrorBoundary>
+            <DashboardTab sales={sales} products={products} />
+          </ErrorBoundary>
         )}
         {activeTab === "config" && (
-          <ConfigTab
-            products={products}
-            sales={sales}
-            onUpdateProducts={updateProductsState}
-            config={config}
-            onUpdateConfig={updateConfigState}
-            onUsdRateUpdate={setUsdRate}
-          />
+          <ErrorBoundary>
+            <ConfigTab
+              products={products}
+              sales={sales}
+              onUpdateProducts={updateProductsState}
+              config={config}
+              onUpdateConfig={updateConfigState}
+              onUsdRateUpdate={setUsdRate}
+            />
+          </ErrorBoundary>
         )}
       </main>
 

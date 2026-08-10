@@ -7,7 +7,15 @@ db.version(1).stores({
   products: "sku, nombre, cat, activo, stock",
   sales: "id, fecha, canal, vendedor, synced",
   config: "key",
-  syncQueue: "id, action, status, createdAt"
+  syncQueue: "id, action, status, createdAt",
+});
+
+// v2: drop syncQueue — no code ever reads or writes this table
+db.version(2).stores({
+  products: "sku, nombre, cat, activo, stock",
+  sales: "id, fecha, canal, vendedor, synced",
+  config: "key",
+  syncQueue: null,
 });
 
 export async function initDatabase() {
