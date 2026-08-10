@@ -5,7 +5,7 @@ export const K = {
 };
 
 export const CANALES = ["Instagram", "WhatsApp", "MercadoLibre", "Tienda Nube", "Local / Mostrador"];
-export const METODOS = ["Transferencia", "Mercado Pago", "Efectivo", "Tarjeta débito", "Tarjeta crédito"];
+export const METODOS = ["Transferencia", "Mercado Pago", "Efectivo", "Tarjeta débito", "Tarjeta crédito", "Mixto (Efect + Transfer)"];
 export const CATS = ["Esteroides / AAS", "Péptidos", "Fármacos PCT/AI", "Suplementos", "Vitaminas", "Accesorios", "Combos"];
 
 export const DEMO_PRODUCTS = [

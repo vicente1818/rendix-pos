@@ -133,6 +133,7 @@ export function VentaTab({
   const [step, setStep] = useState("productos"); // productos | datos | confirmar | exito
   const [saving, setSaving] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  const [mixtoEfectivo, setMixtoEfectivo] = useState(0);
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
   const [showMpQrModal, setShowMpQrModal] = useState(false);
   // BUG FIX: stable QR order ID — generated once when the modal is opened,
@@ -217,6 +218,7 @@ export function VentaTab({
     setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });
     setSyncError(null);
     setMpQrOrderId(null);
+    setMixtoEfectivo(0);
     setExitoActionsReady(false);
     setStep("productos");
   };
@@ -260,12 +262,19 @@ export function VentaTab({
     setSaving(true);
     setSyncError(null);
     try {
+      const isMixto = metodo === "Mixto (Efect + Transfer)";
       const venta = {
         id: overrideId || generateSaleId(),
         fecha: new Date().toISOString(),
         canal, metodo, vendedor, cli,
         items: cart.map(i => ({ ...i, subtotal: i.precio * i.qty })),
         subtotal, descPct, descMonto, total, estado: "Confirmado",
+        ...(isMixto && {
+          pagoMixto: {
+            efectivo: Math.min(mixtoEfectivo, total),
+            transfer: Math.max(0, total - mixtoEfectivo),
+          },
+        }),
       };
 
       const updProds = products.map(p => {
@@ -273,15 +282,17 @@ export function VentaTab({
         return ci ? { ...p, stock: Math.max(0, p.stock - ci.qty) } : p;
       });
 
-      try {
-        await postToSheets("venta", venta);
-      } catch (sheetsErr) {
-        console.error("Sheets sync failed:", sheetsErr);
-        setSyncError("No se pudo sincronizar con Google Sheets. Venta guardada localmente.");
-      }
-
-      setLastCompletedSale(venta);
+      // Persist to IndexedDB first — this is the only blocking step.
+      // Sheets sync is fire-and-forget: a network timeout must never
+      // block a completed sale or allow the cashier to clear a cart
+      // before the DB write has succeeded.
       await onSaleDone(venta, updProds);
+      setLastCompletedSale(venta);
+
+      postToSheets("venta", venta).catch(sheetsErr => {
+        console.error("Sheets background sync failed:", sheetsErr);
+        setSyncError("Venta guardada. No se pudo sincronizar con Google Sheets.");
+      });
       hapticSuccess();
       setStep("exito");
       exitoTimer.current = setTimeout(() => setExitoActionsReady(true), 1500);
@@ -476,11 +487,61 @@ export function VentaTab({
             <label htmlFor="vt-metodo" style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
               Método de pago
             </label>
-            <select id="vt-metodo" value={metodo} onChange={e => setMetodo(e.target.value)} className="select-dark">
+            <select id="vt-metodo" value={metodo} onChange={e => { setMetodo(e.target.value); setMixtoEfectivo(0); }} className="select-dark">
               {METODOS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
         </div>
+
+        {/* Pago Mixto — split tender inputs */}
+        {metodo === "Mixto (Efect + Transfer)" && (
+          <div style={{
+            padding: "12px 14px",
+            background: "rgba(0,229,255,0.04)",
+            border: "1px solid rgba(0,229,255,0.2)",
+            borderRadius: 6,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}>
+            <div style={{ fontSize: 11, color: "var(--accent-cyan)", textTransform: "uppercase", letterSpacing: "0.5px", fontFamily: MONO }}>
+              Dividir pago · Total: {formatCurrency(total)}
+            </div>
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div style={{ flex: 1 }}>
+                <label htmlFor="vt-mixto-efectivo" style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                  Efectivo ($)
+                </label>
+                <input
+                  id="vt-mixto-efectivo"
+                  type="number"
+                  min={0}
+                  max={total}
+                  step={100}
+                  value={mixtoEfectivo}
+                  onChange={e => setMixtoEfectivo(Math.max(0, Math.min(total, +e.target.value)))}
+                  className="input-dark"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4 }}>Transfer / QR ($)</div>
+                <div style={{
+                  padding: "10px 12px",
+                  background: "var(--bg-surface)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 4,
+                  fontSize: 14,
+                  fontFamily: MONO,
+                  color: "var(--text-primary)",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  {formatCurrency(Math.max(0, total - mixtoEfectivo))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: 16 }}>
           {/* UX: label linked via htmlFor; slider has aria-label for screen readers */}

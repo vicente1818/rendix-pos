@@ -142,12 +142,12 @@ function estadoBadgeColor(estado) {
 }
 
 // ─── Memoised individual sale card ───────────────────────────────────────────
-const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale }) {
-  // Stable click handler per card — onToggle itself is stable from parent useCallback
+const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale, onReturnSale }) {
   const handleClick = useCallback(() => onToggle(v.id), [onToggle, v.id]);
 
   const [updating, setUpdating] = useState(false);
   const [updateErr, setUpdateErr] = useState(null);
+  const [returning, setReturning] = useState(false);
 
   const handleUpdate = useCallback(async (patch) => {
     setUpdating(true);
@@ -156,6 +156,15 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
     catch { setUpdateErr('Error al actualizar. Intentá de nuevo.'); }
     finally { setUpdating(false); }
   }, [onUpdateSale, v.id]);
+
+  const handleReturn = useCallback(async () => {
+    setUpdating(true);
+    setUpdateErr(null);
+    setReturning(false);
+    try { await onReturnSale(v.id, v.items || []); }
+    catch { setUpdateErr('Error al procesar devolución. Intentá de nuevo.'); }
+    finally { setUpdating(false); }
+  }, [onReturnSale, v.id, v.items]);
 
   // Compute discount amount safely: prefer stored value, fall back to derivation
   const discountMonto =
@@ -339,54 +348,71 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
             </div>
           )}
 
-          {/* Return / cancel action row — only shown when onUpdateSale is wired */}
+          {/* Return / cancel action row */}
           {onUpdateSale && (
             <div
-              style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}
-              onClick={e => e.stopPropagation()} // prevent card collapse on action clicks
+              style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}
+              onClick={e => e.stopPropagation()}
             >
-              {estado !== "Devuelto" && (
-                <button
-                  style={{
-                    ...BTN_ACTION_BASE,
-                    background: "rgba(239,68,68,0.1)",
-                    color: "var(--status-danger)",
-                    border: "1px solid rgba(239,68,68,0.3)",
-                  }}
-                  disabled={updating}
-                  onClick={() => handleUpdate({ estado: "Devuelto" })}
-                >
-                  Marcar como devuelta
-                </button>
-              )}
-              {estado !== "Cancelado" && estado !== "Devuelto" && (
-                <button
-                  style={{
-                    ...BTN_ACTION_BASE,
-                    background: "rgba(251,191,36,0.08)",
-                    color: "var(--status-warning)",
-                    border: "1px solid rgba(251,191,36,0.3)",
-                  }}
-                  disabled={updating}
-                  onClick={() => handleUpdate({ estado: "Cancelado" })}
-                >
-                  Cancelar venta
-                </button>
-              )}
-              {(estado === "Devuelto" || estado === "Cancelado") && (
-                <button
-                  style={{
-                    ...BTN_ACTION_BASE,
-                    background: "rgba(0,255,136,0.08)",
-                    color: "var(--status-success)",
-                    border: "1px solid rgba(0,255,136,0.2)",
-                  }}
-                  disabled={updating}
-                  onClick={() => handleUpdate({ estado: "Confirmado" })}
-                >
-                  Restaurar a Confirmado
-                </button>
-              )}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {/* Devolver con reposición de stock — 2-step confirmation */}
+                {estado !== "Devuelto" && estado !== "Cancelado" && onReturnSale && (
+                  returning ? (
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: "8px 12px",
+                      background: "rgba(239,68,68,0.08)",
+                      border: "1px solid rgba(239,68,68,0.3)",
+                      borderRadius: "var(--radius-sm)",
+                      flexWrap: "wrap", gap: 8,
+                    }}>
+                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: MONO }}>
+                        ¿Reponer {(v.items || []).reduce((s, i) => s + i.qty, 0)} unidades al stock?
+                      </span>
+                      <button
+                        style={{ ...BTN_ACTION_BASE, background: "rgba(239,68,68,0.15)", color: "var(--status-danger)", border: "1px solid rgba(239,68,68,0.4)" }}
+                        disabled={updating}
+                        onClick={handleReturn}
+                      >
+                        Confirmar devolución
+                      </button>
+                      <button
+                        style={{ ...BTN_ACTION_BASE, background: "var(--bg-surface)", color: "var(--text-muted)", border: "1px solid var(--border-subtle)" }}
+                        onClick={() => setReturning(false)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      style={{ ...BTN_ACTION_BASE, background: "rgba(239,68,68,0.08)", color: "var(--status-danger)", border: "1px solid rgba(239,68,68,0.3)" }}
+                      disabled={updating}
+                      onClick={() => setReturning(true)}
+                    >
+                      Devolver (reponer stock)
+                    </button>
+                  )
+                )}
+
+                {estado !== "Cancelado" && estado !== "Devuelto" && (
+                  <button
+                    style={{ ...BTN_ACTION_BASE, background: "rgba(251,191,36,0.08)", color: "var(--status-warning)", border: "1px solid rgba(251,191,36,0.3)" }}
+                    disabled={updating}
+                    onClick={() => handleUpdate({ estado: "Cancelado" })}
+                  >
+                    Cancelar venta
+                  </button>
+                )}
+                {(estado === "Devuelto" || estado === "Cancelado") && (
+                  <button
+                    style={{ ...BTN_ACTION_BASE, background: "rgba(0,255,136,0.08)", color: "var(--status-success)", border: "1px solid rgba(0,255,136,0.2)" }}
+                    disabled={updating}
+                    onClick={() => handleUpdate({ estado: "Confirmado" })}
+                  >
+                    Restaurar a Confirmado
+                  </button>
+                )}
+              </div>
             </div>
           )}
           {updateErr && <div style={{color:'var(--status-danger)',fontSize:11,marginTop:4}}>{updateErr}</div>}
@@ -415,7 +441,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
 });
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
+export function VentasTab({ sales = [], loading = false, onUpdateSale, onReturnSale }) {
   const [canal, setCanal] = useState("Todos");
   const [exp, setExp] = useState(null);
   // Text search
@@ -649,6 +675,7 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
                   isExpanded={exp === v.id}
                   onToggle={toggleCard}
                   onUpdateSale={onUpdateSale}
+                  onReturnSale={onReturnSale}
                 />
               ))}
             </div>

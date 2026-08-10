@@ -89,6 +89,20 @@ export default function App() {
     await putDbSale(target);
   };
 
+  const handleReturnSale = async (saleId, returnedItems) => {
+    const target = sales.find(s => s.id === saleId);
+    if (!target) return;
+    const updatedSale = { ...target, estado: "Devuelto" };
+    const updatedProducts = products.map(p => {
+      const ret = returnedItems.find(i => i.sku === p.sku);
+      return ret ? { ...p, stock: p.stock + ret.qty } : p;
+    });
+    await putDbSale(updatedSale);
+    await saveDbProducts(updatedProducts);
+    setSales(prev => prev.map(s => s.id === saleId ? updatedSale : s));
+    setProducts(updatedProducts);
+  };
+
   const updateProductsState = async (newProducts) => {
     setProducts(newProducts);
     await saveDbProducts(newProducts);
@@ -192,7 +206,7 @@ export default function App() {
         )}
         {activeTab === "ventas" && (
           <ErrorBoundary>
-            <VentasTab sales={sales} onUpdateSale={handleUpdateSale} />
+            <VentasTab sales={sales} onUpdateSale={handleUpdateSale} onReturnSale={handleReturnSale} />
           </ErrorBoundary>
         )}
         {activeTab === "clientes" && (
