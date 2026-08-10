@@ -55,14 +55,19 @@ export function DashboardTab({ sales = [], products = [] }) {
 
   // ── Memoised derivations ─────────────────────────────────────────────────
 
+  const activeSales = useMemo(
+    () => sales.filter(s => s.estado !== "Cancelado" && s.estado !== "Devuelto"),
+    [sales],
+  );
+
   const sRange = useMemo(
-    () => sales.filter(s => localMs(s.fecha) >= rangeStart),
-    [sales, rangeStart],
+    () => activeSales.filter(s => localMs(s.fecha) >= rangeStart),
+    [activeSales, rangeStart],
   );
 
   const totGral = useMemo(
-    () => sales.reduce((a, v) => a + (v.total || 0), 0),
-    [sales],
+    () => activeSales.reduce((a, v) => a + (v.total || 0), 0),
+    [activeSales],
   );
 
   const totRange = useMemo(
@@ -76,12 +81,12 @@ export function DashboardTab({ sales = [], products = [] }) {
   // Consistent bucketing: both sHoy and trend use localMs calendar-day diff
   const last7DaysTrend = useMemo(() => {
     const trend = [0, 0, 0, 0, 0, 0, 0];
-    sales.forEach(s => {
+    activeSales.forEach(s => {
       const diff = Math.round((todayMs - localMs(s.fecha)) / DAY_MS);
       if (diff >= 0 && diff < 7) trend[6 - diff] += s.total || 0;
     });
     return trend;
-  }, [sales, todayMs]);
+  }, [activeSales, todayMs]);
 
   const hasTrend = last7DaysTrend.some(v => v > 0);
   // Sum of the actual 7-day window — replaces all-time totGral in the hero card

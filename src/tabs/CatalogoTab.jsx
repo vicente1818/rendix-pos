@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, memo } from "react";
-import { save } from "../utils/storage.js";
 import { postToSheets } from "../utils/sheets.js";
 import { fileToDataURL } from "../utils/tiendanube.js";
-import { K, formatCurrency } from "../utils/constants.js";
+import { formatCurrency } from "../utils/constants.js";
 import { Button, SectionCard, SearchInput, StockBadge, Badge, EmptyState } from "../components/UI.jsx";
 import { getProductImage } from "../utils/imageMatcher.js";
 
@@ -560,17 +559,13 @@ export function CatalogoTab({ products, onUpdate }) {
     setBusy(true);
     try {
       const updated = products.map(p => p.sku === sku ? { ...p, stock: n } : p);
-      const ok = await save(K.products, updated);
-      // FINDING #2 fix: abort before updating UI state if persist failed
-      if (!ok) { alert("Error al guardar. Verifique el almacenamiento."); return; }
-      // FINDING #3 fix: local history entry — works offline, Sheets is optional sync
+      await onUpdate(updated);
       await appendStockHistory({ sku, nombre: target.nombre || "", prev, next: n, reason });
       await postToSheets("stock_update", {
         sku, nombre: target.nombre || "",
         stockAnterior: prev, stockNuevo: n,
         fecha: new Date().toISOString(), motivo: reason || "",
       });
-      onUpdate(updated);
       setEditing(null);
     } finally {
       setBusy(false);
@@ -586,8 +581,7 @@ export function CatalogoTab({ products, onUpdate }) {
     setBusy(true);
     try {
       const updated = products.map(p => p.sku === sku ? { ...p, stock: next } : p);
-      const ok = await save(K.products, updated);
-      if (!ok) { alert("Error al guardar. Verifique el almacenamiento."); return; }
+      await onUpdate(updated);
       await appendStockHistory({ sku, nombre: target.nombre || "", prev, next, delta, reason: "" });
       await postToSheets("stock_update", {
         sku, nombre: target.nombre || "",
@@ -595,33 +589,26 @@ export function CatalogoTab({ products, onUpdate }) {
         fecha: new Date().toISOString(),
         motivo: `ajuste_rapido:${delta > 0 ? "+" : ""}${delta}`,
       });
-      onUpdate(updated);
     } finally {
       setBusy(false);
     }
   }, [products, onUpdate]);
 
-  // FINDING #2 fix: save() return value checked in toggleActive
   const handleToggleActive = useCallback(async (sku) => {
     const p = products.find(x => x.sku === sku);
     if (!p) return;
     setBusy(true);
     try {
       const updated = products.map(x => x.sku === sku ? { ...x, activo: !x.activo } : x);
-      const ok = await save(K.products, updated);
-      if (!ok) { alert("Error al guardar. Verifique el almacenamiento."); return; }
-      onUpdate(updated);
+      await onUpdate(updated);
     } finally {
       setBusy(false);
     }
   }, [products, onUpdate]);
 
-  // FINDING #2 fix: save() return value checked in saveImg
   const handleSaveImg = useCallback(async (sku, url) => {
     const updated = products.map(p => p.sku === sku ? { ...p, imagen: url || "" } : p);
-    const ok = await save(K.products, updated);
-    if (!ok) { alert("Error al guardar. Verifique el almacenamiento."); return; }
-    onUpdate(updated);
+    await onUpdate(updated);
     setEditingImg(null);
   }, [products, onUpdate]);
 
@@ -642,9 +629,7 @@ export function CatalogoTab({ products, onUpdate }) {
     setBusy(true);
     try {
       const updated = products.map(p => selected.has(p.sku) ? { ...p, activo: activeVal } : p);
-      const ok = await save(K.products, updated);
-      if (!ok) { alert("Error al guardar. Verifique el almacenamiento."); return; }
-      onUpdate(updated);
+      await onUpdate(updated);
       setSelected(new Set());
     } finally {
       setBusy(false);

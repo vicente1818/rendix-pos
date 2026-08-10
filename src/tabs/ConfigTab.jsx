@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { setApiLayerKeys, getUsdToArs, validatePhone, clearRateCache } from "../utils/apilayer.js";
-import { CATS, K } from "../utils/constants.js";
-import { save } from "../utils/storage.js";
+import { CATS } from "../utils/constants.js";
 import { setSheetsUrl, fetchCatalogFromSheets } from "../utils/sheets.js";
 import { fetchFromTiendaNube, mergeTNProducts } from "../utils/tiendanube.js";
 import { exportVentas, exportProductos, exportClientes, importCatalogFromCSV } from "../utils/csv.js";
@@ -160,7 +159,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
   // ── Save functions — each saves only its own section's fields ────────────
   const saveSheetsConfig = useCallback(async () => {
     const updated = { ...cfg, sheetsUrl: sheetsInput };
-    await save(K.config, updated);
     setSheetsUrl(sheetsInput);
     onUpdateConfig(updated);
     if (updated.exchangeKey) getUsdToArs().then(onUsdRateUpdate).catch(() => {});
@@ -169,7 +167,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
 
   const saveVendedorConfig = useCallback(async () => {
     const updated = { ...cfg, vendedor: vendedorInput };
-    await save(K.config, updated);
     onUpdateConfig(updated);
     if (updated.exchangeKey) getUsdToArs().then(onUsdRateUpdate).catch(() => {});
     showMsg("✓ Nombre de vendedor guardado");
@@ -177,7 +174,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
 
   const saveTNConfig = useCallback(async () => {
     const updated = { ...cfg, tnStoreId, tnToken };
-    await save(K.config, updated);
     onUpdateConfig(updated);
     if (updated.exchangeKey) getUsdToArs().then(onUsdRateUpdate).catch(() => {});
     showMsg("✓ Credenciales de Tienda Nube guardadas");
@@ -185,7 +181,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
 
   const saveApiLayerConfig = useCallback(async () => {
     const updated = { ...cfg, exchangeKey, numverifyKey, mailboxKey, vatKey };
-    await save(K.config, updated);
     setApiLayerKeys({ exchangeKey, numverifyKey, mailboxKey, vatKey });
     clearRateCache();
     onUpdateConfig(updated);
@@ -216,7 +211,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     const catalog = await fetchCatalogFromSheets();
     setTesting(false);
     if (catalog) {
-      await save(K.products, catalog);
       onUpdateProducts(catalog);
       showMsg(`✓ Catálogo importado de Sheets (${catalog.length} productos)`);
     } else {
@@ -231,7 +225,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     setTestingTN(false);
     if (tnProds) {
       const merged = mergeTNProducts(products, tnProds);
-      await save(K.products, merged);
       onUpdateProducts(merged);
       showMsg(`✓ Sincronizados ${tnProds.length} productos de TiendaNube`);
     } else {
@@ -254,7 +247,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
         setImportMsg(`⚠️ Error: ${res.msg}`);
         return;
       }
-      await save(K.products, res.products);
       onUpdateProducts(res.products);
       setImportResult(res);
       setImportMsg(null);
@@ -285,7 +277,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
       imagen: form.imagen || "",
     };
     const updated = [newProd, ...products.filter(p => p.sku !== newProd.sku)];
-    await save(K.products, updated);
     onUpdateProducts(updated);
     setSaving(false);
     setForm(FORM_INITIAL);
@@ -296,7 +287,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
   const importFarmaCatalog = useCallback(async () => {
     setFarmaImporting(true);
     const merged = mergeFarmaIntoExistingCatalog(products);
-    await save(K.products, merged);
     onUpdateProducts(merged);
     setFarmaImporting(false);
     setFarmaPreview(false);

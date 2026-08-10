@@ -72,11 +72,15 @@ export default function App() {
   };
 
   const handleSaleDone = async (newSale, updatedProducts) => {
+    try {
+      await saveDbSale(newSale);
+      await saveDbProducts(updatedProducts);
+    } catch (err) {
+      console.error("RENDIX: Failed to persist sale to DB:", err);
+      throw err;
+    }
     setSales(prev => [newSale, ...prev]);
     setProducts(updatedProducts);
-    await saveDbSale(newSale);
-    await saveDbProducts(updatedProducts);
-    // Clear global cart
     setCart([]);
     setDescPct(0);
     setCli({ nombre: "", tel: "", ig: "", ciudad: "", notas: "" });

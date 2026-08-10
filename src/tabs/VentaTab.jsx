@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { CANALES, METODOS, formatCurrency, generateSaleId } from "../utils/constants.js";
 import { postToSheets, getSheetsUrl } from "../utils/sheets.js";
 import { generateWhatsAppReceiptLink, generateWhatsAppQuoteLink } from "../utils/whatsapp.js";
@@ -141,8 +141,14 @@ export function VentaTab({
   // UX: Vaciar requires double-tap confirmation
   const [clearConfirm, setClearConfirm] = useState(false);
   const clearConfirmTimer = useRef(null);
+  const exitoTimer = useRef(null);
   // UX: animate success screen — actions revealed 1.5s after confirmar
   const [exitoActionsReady, setExitoActionsReady] = useState(false);
+
+  useEffect(() => () => {
+    if (clearConfirmTimer.current) clearTimeout(clearConfirmTimer.current);
+    if (exitoTimer.current) clearTimeout(exitoTimer.current);
+  }, []);
 
   const { hapticAdd, hapticRemove, hapticClear, hapticSuccess } = useHaptic();
 
@@ -203,6 +209,7 @@ export function VentaTab({
   const clear = () => {
     hapticClear();
     if (clearConfirmTimer.current) clearTimeout(clearConfirmTimer.current);
+    if (exitoTimer.current) clearTimeout(exitoTimer.current);
     setClearConfirm(false);
     setCart([]);
     setQ("");
@@ -277,8 +284,7 @@ export function VentaTab({
       await onSaleDone(venta, updProds);
       hapticSuccess();
       setStep("exito");
-      // Reveal action buttons after a 1.5s animated success moment
-      setTimeout(() => setExitoActionsReady(true), 1500);
+      exitoTimer.current = setTimeout(() => setExitoActionsReady(true), 1500);
     } catch (err) {
       console.error("Error al confirmar venta:", err);
       setSyncError("Error al confirmar la venta. Por favor intente de nuevo.");

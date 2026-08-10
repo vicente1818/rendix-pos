@@ -161,7 +161,7 @@ const SaleCard = memo(function SaleCard({ v, isExpanded, onToggle, onUpdateSale 
   const discountMonto =
     v.descMonto > 0
       ? v.descMonto
-      : v.descPct > 0 && v.total > 0
+      : v.descPct > 0 && v.descPct < 100 && v.total > 0
       ? Math.round((v.total * v.descPct) / (100 - v.descPct))
       : 0;
 
@@ -458,7 +458,7 @@ export function VentasTab({ sales = [], loading = false, onUpdateSale }) {
   // Includes: canal, full-text search on name/ID/vendor, date range
   const filtered = useMemo(() => {
     const lq = q.trim().toLowerCase();
-    const fromDate = dateFrom ? new Date(dateFrom) : null;
+    const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
     const toDate = dateTo ? new Date(dateTo + "T23:59:59") : null;
     return (canal === "Todos" ? sales : sales.filter(s => s.canal === canal))
       .filter(s => {
