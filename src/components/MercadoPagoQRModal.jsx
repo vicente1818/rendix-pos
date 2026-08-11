@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMercadoPagoQR } from "../hooks/useMercadoPagoQR.js";
 import { Button, SectionCard } from "./UI.jsx";
 import { fmt } from "../utils/constants.js";
@@ -10,13 +11,15 @@ export function MercadoPagoQRModal({ posOrderId, totalAmount, items, onClose, on
     timeLeftSec,
     initiateQR,
     cancelPayment,
-    simulateSuccess
+    confirmManualPayment
   } = useMercadoPagoQR({
     posOrderId,
     totalAmount,
     items,
     onSuccess: onPaymentSuccess
   });
+
+  const [opRef, setOpRef] = useState("");
 
   const minutes = Math.floor(timeLeftSec / 60);
   const seconds = String(timeLeftSec % 60).padStart(2, '0');
@@ -89,9 +92,29 @@ export function MercadoPagoQRModal({ posOrderId, totalAmount, items, onClose, on
               <span>({minutes}:{seconds})</span>
             </div>
 
+            <div style={{ width: "100%", textAlign: "left" }}>
+              <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
+                Nº de operación (del comprobante de Mercado Pago)
+              </label>
+              <input
+                value={opRef}
+                onChange={e => setOpRef(e.target.value)}
+                placeholder="Ej. 123456789012"
+                style={{ width: "100%", marginBottom: 4 }}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Verificá el pago en tu app de Mercado Pago antes de confirmar. Esta app no valida el cobro automáticamente.
+              </div>
+            </div>
             <div style={{ display: "flex", gap: 8, width: "100%", marginTop: 8 }}>
-              <Button variant="primary" fullWidth size="sm" onClick={simulateSuccess}>
-                Simular Pago Aprobado ✓
+              <Button
+                variant="primary"
+                fullWidth
+                size="sm"
+                disabled={!opRef.trim()}
+                onClick={() => confirmManualPayment(opRef)}
+              >
+                Confirmar Pago Recibido ✓
               </Button>
               <Button variant="ghost" size="sm" onClick={() => { cancelPayment(); onClose(); }}>
                 Cancelar

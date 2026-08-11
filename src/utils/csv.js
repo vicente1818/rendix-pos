@@ -1,5 +1,13 @@
+// Evita inyecci\u00f3n de f\u00f3rmulas al abrir el CSV en Excel/Sheets: un valor que empiece
+// con =, +, -, @ (o tab/CR) se interpreta como f\u00f3rmula si no se neutraliza primero.
+function sanitizeCsvCell(val) {
+  const s = String(val ?? "");
+  if (/^[=+\-@\t\r]/.test(s)) return "'" + s;
+  return s;
+}
+
 export function downloadCSV(rows, filename) {
-  const csv = "\ufeff" + rows.map(r => r.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  const csv = "\ufeff" + rows.map(r => r.map(c => `"${sanitizeCsvCell(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
   Object.assign(document.createElement("a"), { href: url, download: filename }).click();
   URL.revokeObjectURL(url);

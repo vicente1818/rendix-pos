@@ -6,22 +6,13 @@ export function useMercadoPagoQR({
   items,
   onSuccess,
   onExpire,
-  pollIntervalMs = 2000,
 }) {
   const [status, setStatus] = useState('IDLE'); // IDLE | CREATING | AWAITING_PAYMENT | PAID | EXPIRED | ERROR
   const [qrData, setQrData] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [timeLeftSec, setTimeLeftSec] = useState(300); // 5 mins
 
-  const pollTimerRef = useRef(null);
   const countdownTimerRef = useRef(null);
-
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-  }, []);
 
   const stopCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -30,33 +21,13 @@ export function useMercadoPagoQR({
     }
   }, []);
 
-  const checkStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/pos/checkout/mercadopago/status/${posOrderId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-
-      if (data.success && data.status === 'PAID') {
-        setStatus('PAID');
-        stopPolling();
-        stopCountdown();
-        if (onSuccess) onSuccess();
-      } else if (data.status === 'EXPIRED') {
-        setStatus('EXPIRED');
-        stopPolling();
-        stopCountdown();
-        if (onExpire) onExpire();
-      }
-    } catch (err) {
-      console.warn('Polling error:', err);
-    }
-  }, [posOrderId, stopPolling, stopCountdown, onSuccess, onExpire]);
-
   const initiateQR = useCallback(async () => {
     setStatus('CREATING');
     setErrorMsg(null);
     try {
-      // Simulate dynamic QR generation payload for Mercado Pago Orders API / POST /v1/orders
+      // Genera un identificador de referencia para mostrar en el QR/orden.
+      // No hay backend propio: esta app no puede verificar pagos de forma automática,
+      // por eso el flujo exige confirmación manual con nro. de operación (ver confirmManualPayment).
       const dummyQr = `https://mpago.la/pos_order_${posOrderId}_${Date.now()}`;
       setQrData(dummyQr);
       setStatus('AWAITING_PAYMENT');
@@ -68,7 +39,6 @@ export function useMercadoPagoQR({
         setTimeLeftSec((prev) => {
           if (prev <= 1) {
             stopCountdown();
-            stopPolling();
             setStatus('EXPIRED');
             if (onExpire) onExpire();
             return 0;
@@ -76,35 +46,31 @@ export function useMercadoPagoQR({
           return prev - 1;
         });
       }, 1000);
-
-      // Start status check polling
-      stopPolling();
-      pollTimerRef.current = setInterval(checkStatus, pollIntervalMs);
     } catch (err) {
       setStatus('ERROR');
       setErrorMsg(err.message || 'Error al conectar con Mercado Pago');
     }
-  }, [posOrderId, pollIntervalMs, checkStatus, stopPolling, stopCountdown, onExpire]);
+  }, [posOrderId, stopCountdown, onExpire]);
 
   const cancelPayment = useCallback(() => {
-    stopPolling();
     stopCountdown();
     setStatus('IDLE');
-  }, [stopPolling, stopCountdown]);
+  }, [stopCountdown]);
 
-  const simulateSuccess = useCallback(() => {
+  const confirmManualPayment = useCallback((operationRef) => {
+    const ref = (operationRef || '').trim();
+    if (!ref) return false;
     setStatus('PAID');
-    stopPolling();
     stopCountdown();
-    if (onSuccess) onSuccess();
-  }, [stopPolling, stopCountdown, onSuccess]);
+    if (onSuccess) onSuccess(ref);
+    return true;
+  }, [stopCountdown, onSuccess]);
 
   useEffect(() => {
     return () => {
-      stopPolling();
       stopCountdown();
     };
-  }, [stopPolling, stopCountdown]);
+  }, [stopCountdown]);
 
   return {
     status,
@@ -113,6 +79,6 @@ export function useMercadoPagoQR({
     timeLeftSec,
     initiateQR,
     cancelPayment,
-    simulateSuccess
+    confirmManualPayment
   };
 }

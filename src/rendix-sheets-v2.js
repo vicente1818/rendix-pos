@@ -5,12 +5,17 @@
 // CÓMO CONFIGURAR (5 minutos):
 // 1. Abrí tu Google Sheet → Extensiones → Apps Script
 // 2. Borrá todo y pegá este código → Guardar
-// 3. Implementar → Nueva implementación
+// 3. Proyecto → Configuración del proyecto → Propiedades del script
+//    Agregá la propiedad RENDIX_SECRET con una clave larga y difícil de adivinar
+// 4. Implementar → Nueva implementación
 //    Tipo: Aplicación web
 //    Ejecutar como: Yo
 //    Quién tiene acceso: Cualquier persona
-// 4. Copiá la URL del Web App
-// 5. Pegála en la app RENDIX → Config → URL del Web App → Guardar
+// 5. Copiá la URL del Web App
+// 6. Pegála en la app RENDIX → Config → URL del Web App + la MISMA clave del paso 3 → Guardar
+//
+// IMPORTANTE: sin la propiedad RENDIX_SECRET configurada, cualquiera con la URL del Web App
+// puede leer tu catálogo completo o inyectar ventas falsas. No lo dejes sin definir.
 //
 // CÓMO CARGAR EL CATÁLOGO DESDE EXCEL:
 // - En Sheets: Archivo → Importar → subís el .xlsx
@@ -27,9 +32,25 @@ const HOJA_CLIENTES = "Clientes";
 const HOJA_CATALOGO = "Catálogo";
 const HOJA_RESUMEN  = "Resumen";
 
+// ── Autenticación por clave compartida (Propiedades del script → RENDIX_SECRET) ─
+function secretConfigurado() {
+  return PropertiesService.getScriptProperties().getProperty("RENDIX_SECRET");
+}
+
+function secretValido(recibido) {
+  const esperado = secretConfigurado();
+  // Si no se configuró ninguna clave, el Web App queda abierto (no recomendado).
+  if (!esperado) return true;
+  return recibido === esperado;
+}
+
 // ── GET: la app lee el catálogo y hace ping de conexión ──────────────────────
 function doGet(e) {
   const action = e?.parameter?.action || "ping";
+
+  if (!secretValido(e?.parameter?.secret)) {
+    return respuesta({ status: "error", message: "No autorizado" });
+  }
 
   if (action === "catalog") {
     return servirCatalogo();
@@ -104,6 +125,11 @@ function servirCatalogo() {
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
+
+    if (!secretValido(data.secret)) {
+      return respuesta({ status: "error", message: "No autorizado" });
+    }
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
     if (data.type === "venta") {

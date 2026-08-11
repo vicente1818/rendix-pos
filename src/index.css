@@ -154,6 +154,49 @@ input, select, button {
   font-family: inherit;
 }
 
+input:not([type="range"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-height: 44px;
+  font-size: 13px;
+  width: 100%;
+}
+
+input[type="file"] {
+  color: var(--text-secondary);
+}
+
+input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--accent-cyan);
+}
+
+select {
+  cursor: pointer;
+}
+
+/* Tablet / mostrador: centra el contenido en vez de estirarlo a lo ancho completo */
+@media (min-width: 720px) {
+  #root {
+    max-width: 720px;
+    margin: 0 auto;
+    min-height: 100dvh;
+    box-shadow: var(--shadow-card);
+  }
+}
+
+@media (min-width: 1024px) {
+  #root {
+    max-width: 860px;
+  }
+}
+
 /* Touch Target Ergonomics */
 .touch-target-48 {
   min-width: 48px;

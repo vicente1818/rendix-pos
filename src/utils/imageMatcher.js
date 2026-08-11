@@ -10,8 +10,9 @@ export function getProductImage(product) {
   if (!product) return DEFAULT_FALLBACK;
 
   const img = (product.imagen || "").trim();
-  // Si ya tiene una imagen local válida en /farma/, usarla directamente
-  if (img.startsWith("/farma/")) {
+  // Si ya tiene una imagen local en /farma/, o una subida/pegada por el usuario
+  // (data URL o URL externa), respetarla: no pisar una imagen personalizada.
+  if (img.startsWith("/farma/") || img.startsWith("data:image") || /^https?:\/\//i.test(img)) {
     return img;
   }
 

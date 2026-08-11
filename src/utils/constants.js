@@ -1,11 +1,5 @@
-export const K = {
-  products: "rendix:v2:products",
-  sales:    "rendix:v2:sales",
-  config:   "rendix:v2:config",
-};
-
 export const CANALES = ["Instagram", "WhatsApp", "MercadoLibre", "Tienda Nube", "Local / Mostrador"];
-export const METODOS = ["Transferencia", "Mercado Pago", "Efectivo", "Tarjeta débito", "Tarjeta crédito"];
+export const METODOS = ["Transferencia", "Mercado Pago", "MercadoPago QR", "Efectivo", "Tarjeta débito", "Tarjeta crédito"];
 export const CATS = ["Esteroides / AAS", "Péptidos", "Fármacos PCT/AI", "Suplementos", "Vitaminas", "Accesorios", "Combos"];
 
 export const DEMO_PRODUCTS = [

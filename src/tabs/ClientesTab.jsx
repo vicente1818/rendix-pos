@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { fmt, fmtD } from "../utils/constants.js";
+import { calculateCustomerTier } from "../utils/inventoryEngine.js";
 import { SectionCard, SearchInput } from "../components/UI.jsx";
 
 export function ClientesTab({ sales }) {
@@ -9,12 +10,14 @@ export function ClientesTab({ sales }) {
   const clMap = {};
   sales.forEach(s => {
     const key = s.cli?.tel || s.cli?.ig || s.cli?.nombre || "anon-" + s.id;
-    if (!clMap[key]) clMap[key] = { nombre: s.cli?.nombre || "Cliente sin nombre", tel: s.cli?.tel || "", ig: s.cli?.ig || "", ciudad: s.cli?.ciudad || "", ventas: [], total: 0 };
+    if (!clMap[key]) clMap[key] = { key, nombre: s.cli?.nombre || "Cliente sin nombre", tel: s.cli?.tel || "", ig: s.cli?.ig || "", ciudad: s.cli?.ciudad || "", ventas: [], total: 0 };
     clMap[key].ventas.push(s);
     clMap[key].total += s.total;
   });
 
-  const clientes = Object.values(clMap).sort((a, b) => b.total - a.total);
+  const clientes = Object.values(clMap)
+    .map(c => ({ ...c, tier: calculateCustomerTier(c.total) }))
+    .sort((a, b) => b.total - a.total);
   const filtered = q ? clientes.filter(c => c.nombre.toLowerCase().includes(q.toLowerCase()) || c.tel.includes(q) || c.ig.includes(q)) : clientes;
 
   return (
@@ -28,8 +31,8 @@ export function ClientesTab({ sales }) {
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.map((c, i) => (
-          <SectionCard key={i} onClick={() => setExp(exp === i ? null : i)} style={{ cursor: "pointer" }}>
+        {filtered.map((c) => (
+          <SectionCard key={c.key} onClick={() => setExp(exp === c.key ? null : c.key)} style={{ cursor: "pointer" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{
@@ -37,7 +40,7 @@ export function ClientesTab({ sales }) {
                   height: 40,
                   borderRadius: "var(--radius-full)",
                   background: "var(--accent-cyan-glow)",
-                  border: "1px solid rgba(0, 229, 255, 0.3)",
+                  border: "1px solid var(--accent-cyan-glow)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -49,7 +52,14 @@ export function ClientesTab({ sales }) {
                   {(c.nombre || "?")[0].toUpperCase()}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)" }}>{c.nombre}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: "var(--text-primary)" }}>{c.nombre}</div>
+                    {c.tier.discountPct > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: c.tier.color, border: `1px solid ${c.tier.color}`, borderRadius: "var(--radius-full)", padding: "1px 6px" }}>
+                        {c.tier.name}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
                     {c.tel || c.ig || "Sin contacto"} {c.ciudad ? `· ${c.ciudad}` : ""}
                   </div>
@@ -61,7 +71,7 @@ export function ClientesTab({ sales }) {
               </div>
             </div>
 
-            {exp === i && (
+            {exp === c.key && (
               <div style={{ marginTop: 10, borderTop: "1px dashed var(--border-subtle)", paddingTop: 10 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>
                   Historial de compras

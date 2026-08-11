@@ -36,6 +36,18 @@ export async function updateDbProduct(sku, updates) {
   return await db.products.update(sku, updates);
 }
 
+/**
+ * Applies partial updates to multiple products in one transaction,
+ * without rewriting the whole table (unlike saveDbProducts).
+ */
+export async function updateDbProducts(patches) {
+  return await db.transaction("rw", db.products, async () => {
+    for (const { sku, changes } of patches) {
+      await db.products.update(sku, changes);
+    }
+  });
+}
+
 export async function getDbSales() {
   return await db.sales.orderBy("fecha").reverse().toArray();
 }

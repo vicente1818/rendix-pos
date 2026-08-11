@@ -1,12 +1,16 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CANALES, METODOS, fmt, genId } from "../utils/constants.js";
-import { postToSheets, getSheetsUrl } from "../utils/sheets.js";
+import { getSheetsUrl } from "../utils/sheets.js";
+import { queueOrSyncAction } from "../utils/syncManager.js";
 import { generateWhatsAppReceiptLink, generateWhatsAppQuoteLink } from "../utils/whatsapp.js";
 import { Button, SectionCard, SearchInput, StockBadge } from "../components/UI.jsx";
 import { MercadoPagoQRModal } from "../components/MercadoPagoQRModal.jsx";
 import { useHaptic } from "../hooks/useHaptic.js";
 import { scanAudio } from "../utils/audio.js";
 import { getProductImage } from "../utils/imageMatcher.js";
+import { getDbProducts } from "../utils/db.js";
+import { useBarcodeScanner } from "../hooks/useBarcodeScanner.js";
+import { printViaWebUSB, printViaWebBluetooth } from "../utils/printer.js";
 
 export function VentaTab({
   products, onSaleDone, vendedor,
@@ -17,16 +21,18 @@ export function VentaTab({
   const [q, setQ] = useState("");
   const [step, setStep] = useState("productos"); // productos | datos | confirmar | exito
   const [saving, setSaving] = useState(false);
+  const [stockError, setStockError] = useState(null);
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
   const [showMpQrModal, setShowMpQrModal] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   const { hapticAdd, hapticRemove, hapticClear, hapticSuccess } = useHaptic();
 
-  const filtered = products.filter(p => p.activo && p.stock > 0 &&
+  const filtered = useMemo(() => products.filter(p => p.activo && p.stock > 0 &&
     (p.nombre.toLowerCase().includes(q.toLowerCase()) ||
      p.sku.toLowerCase().includes(q.toLowerCase()) ||
      p.cat.toLowerCase().includes(q.toLowerCase()))
-  );
+  ), [products, q]);
 
   const addP = p => {
     scanAudio.playSuccessBeep();
@@ -37,6 +43,14 @@ export function VentaTab({
       return [...prev, { sku: p.sku, nombre: p.nombre, precio: p.precio, cat: p.cat, qty: 1 }];
     });
   };
+
+  useBarcodeScanner({
+    enabled: step === "productos",
+    onScan: (code) => {
+      const p = products.find(x => x.activo && x.stock > 0 && x.sku.toLowerCase() === code.trim().toLowerCase());
+      if (p) addP(p);
+    }
+  });
 
   const delP = sku => {
     hapticRemove();
@@ -61,23 +75,42 @@ export function VentaTab({
   const descMonto = Math.round(subtotal * (descPct / 100));
   const total = subtotal - descMonto;
 
-  const confirmar = async () => {
+  const confirmar = async (mpOperationRef) => {
     setSaving(true);
+    setStockError(null);
+
+    // Revalida stock contra la DB justo antes de confirmar (no contra el estado en memoria,
+    // que puede haber quedado desactualizado por otra pestaña o una edición reciente en Catálogo).
+    const freshProducts = await getDbProducts();
+    const insufficient = [];
+    const patches = cart.map(i => {
+      const fresh = freshProducts.find(p => p.sku === i.sku);
+      const stockActual = fresh ? fresh.stock : 0;
+      if (stockActual < i.qty) insufficient.push({ nombre: i.nombre, disponible: stockActual, pedido: i.qty });
+      return { sku: i.sku, changes: { stock: Math.max(0, stockActual - i.qty) } };
+    });
+
+    if (insufficient.length > 0) {
+      setStockError(
+        "Stock insuficiente: " +
+        insufficient.map(x => `${x.nombre} (disponible ${x.disponible}, pedido ${x.pedido})`).join(", ")
+      );
+      setSaving(false);
+      return;
+    }
+
     const venta = {
       id: genId(), fecha: new Date().toISOString(),
       canal, metodo, vendedor, cli,
       items: cart.map(i => ({ ...i, subtotal: i.precio * i.qty })),
-      subtotal, descPct, descMonto, total, estado: "Confirmado"
+      subtotal, descPct, descMonto, total, estado: "Confirmado",
+      ...(mpOperationRef ? { mpOperationRef, confirmadoPor: vendedor } : {})
     };
 
-    const updProds = products.map(p => {
-      const ci = cart.find(i => i.sku === p.sku);
-      return ci ? { ...p, stock: Math.max(0, p.stock - ci.qty) } : p;
-    });
-
-    await postToSheets("venta", venta);
+    const synced = await queueOrSyncAction("venta", venta);
+    venta.synced = synced;
     setLastCompletedSale(venta);
-    await onSaleDone(venta, updProds);
+    await onSaleDone(venta, patches);
     hapticSuccess();
     setSaving(false);
     setStep("exito");
@@ -94,6 +127,21 @@ export function VentaTab({
     window.open(link, "_blank");
   };
 
+  const handlePrintReceipt = async () => {
+    if (!lastCompletedSale) return;
+    setPrinting(true);
+    try {
+      await printViaWebUSB(lastCompletedSale);
+    } catch (usbErr) {
+      try {
+        await printViaWebBluetooth(lastCompletedSale);
+      } catch (btErr) {
+        alert("No se pudo imprimir: conectá una impresora térmica por USB o Bluetooth e intentá de nuevo.\n" + (usbErr?.message || btErr?.message || ""));
+      }
+    }
+    setPrinting(false);
+  };
+
   if (step === "exito" && lastCompletedSale) return (
     <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 14 }} className="animate-fade-in">
       <div style={{ textAlign: "center", padding: "2rem 1rem" }}>
@@ -104,12 +152,19 @@ export function VentaTab({
         <div style={{ color: "var(--text-secondary)", marginTop: 6, fontSize: 15, fontWeight: 600 }} className="tabular-nums">
           {fmt(lastCompletedSale.total)} · {lastCompletedSale.canal}
         </div>
-        {getSheetsUrl() && <div style={{ fontSize: 11, color: "var(--status-success)", marginTop: 8 }}>✓ Sincronizado con Google Sheets</div>}
+        {getSheetsUrl() && (
+          lastCompletedSale.synced
+            ? <div style={{ fontSize: 11, color: "var(--status-success)", marginTop: 8 }}>✓ Sincronizado con Google Sheets</div>
+            : <div style={{ fontSize: 11, color: "var(--status-warning)", marginTop: 8 }}>⏳ Pendiente de sincronizar (se reintentará solo)</div>
+        )}
       </div>
 
       <SectionCard title="Acciones de comprobante">
         <Button variant="primary" fullWidth size="lg" onClick={handleShareWhatsAppReceipt} style={{ marginBottom: 8 }}>
           📲 Enviar Ticket por WhatsApp
+        </Button>
+        <Button variant="secondary" fullWidth size="md" onClick={handlePrintReceipt} disabled={printing} style={{ marginBottom: 8 }}>
+          {printing ? "Imprimiendo..." : "🖨️ Imprimir Ticket"}
         </Button>
         <Button variant="secondary" fullWidth size="md" onClick={() => { setStep("productos"); setLastCompletedSale(null); clear(); }}>
           ➕ Nueva Venta
@@ -156,12 +211,18 @@ export function VentaTab({
         </div>
       </SectionCard>
 
+      {stockError && (
+        <div style={{ padding: 10, background: "var(--status-danger-bg)", border: "1px solid var(--status-danger)", color: "var(--status-danger)", borderRadius: "var(--radius-sm)", fontSize: 12, fontWeight: 600 }}>
+          {stockError}
+        </div>
+      )}
+
       {metodo === "MercadoPago QR" ? (
         <Button variant="primary" fullWidth size="lg" onClick={() => setShowMpQrModal(true)}>
           Generar QR Mercado Pago 📱
         </Button>
       ) : (
-        <Button variant="primary" fullWidth size="lg" onClick={confirmar} disabled={saving}>
+        <Button variant="primary" fullWidth size="lg" onClick={() => confirmar()} disabled={saving}>
           {saving ? "Guardando..." : "Confirmar y Descontar Stock 🚀"}
         </Button>
       )}
@@ -176,9 +237,9 @@ export function VentaTab({
           totalAmount={total}
           items={cart}
           onClose={() => setShowMpQrModal(false)}
-          onPaymentSuccess={() => {
+          onPaymentSuccess={(operationRef) => {
             setShowMpQrModal(false);
-            confirmar();
+            confirmar(operationRef);
           }}
         />
       )}
@@ -249,7 +310,7 @@ export function VentaTab({
       </div>
 
       {cart.length > 0 && (
-        <SectionCard style={{ borderColor: "rgba(0, 229, 255, 0.3)", background: "var(--bg-surface)" }}>
+        <SectionCard style={{ borderColor: "var(--accent-cyan-glow)", background: "var(--bg-surface)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-cyan)", textTransform: "uppercase" }}>
               Items en el carrito ({cart.length})

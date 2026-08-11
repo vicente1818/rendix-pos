@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { initDatabase, getDbProducts, saveDbProducts, getDbSales, saveDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
-import { setSheetsUrl } from "./utils/sheets.js";
+import { initDatabase, getDbProducts, saveDbProducts, updateDbProducts, getDbSales, saveDbSale, getDbConfig, setDbConfig } from "./utils/db.js";
+import { setSheetsUrl, setSheetsSecret } from "./utils/sheets.js";
+import { initSyncManager } from "./utils/syncManager.js";
 import { autoFixProductImages } from "./utils/imageMatcher.js";
 import { Header } from "./components/Header.jsx";
 import { Navigation } from "./components/Navigation.jsx";
@@ -16,8 +17,9 @@ export default function App() {
   const [theme, setTheme] = useState("dark");
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
-  const [config, setConfig] = useState({ sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" });
+  const [config, setConfig] = useState({ sheetsUrl: "", sheetsSecret: "", vendedor: "Principal", tnStoreId: "", tnToken: "" });
   const [loaded, setLoaded] = useState(false);
+  const [initError, setInitError] = useState(null);
 
   // Global Cart State (Preserved across tab switches)
   const [cart, setCart] = useState([]);
@@ -28,21 +30,33 @@ export default function App() {
 
   useEffect(() => {
     async function init() {
-      await initDatabase();
-      const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", vendedor: "Principal", tnStoreId: "", tnToken: "" };
-      const prods = await getDbProducts();
-      const fixedProds = autoFixProductImages(prods);
-      
-      // Auto-save repaired image paths to IndexedDB
-      await saveDbProducts(fixedProds);
+      try {
+        await initDatabase();
+        const cfg = await getDbConfig("appConfig") || { sheetsUrl: "", sheetsSecret: "", vendedor: "Principal", tnStoreId: "", tnToken: "" };
+        const prods = await getDbProducts();
+        const fixedProds = autoFixProductImages(prods);
 
-      const sls = await getDbSales();
+        // Solo persiste si autoFixProductImages realmente cambió algo
+        // (evita reescribir la tabla completa, y no pisa imágenes subidas por el usuario)
+        const changed = fixedProds.filter((p, i) => p.imagen !== prods[i]?.imagen);
+        if (changed.length > 0) {
+          await updateDbProducts(changed.map(p => ({ sku: p.sku, changes: { imagen: p.imagen } })));
+        }
 
-      setConfig(cfg);
-      if (cfg.sheetsUrl) setSheetsUrl(cfg.sheetsUrl);
-      setProducts(fixedProds);
-      setSales(sls);
-      setLoaded(true);
+        const sls = await getDbSales();
+
+        setConfig(cfg);
+        if (cfg.sheetsUrl) setSheetsUrl(cfg.sheetsUrl);
+        if (cfg.sheetsSecret) setSheetsSecret(cfg.sheetsSecret);
+        setProducts(fixedProds);
+        setSales(sls);
+        initSyncManager();
+      } catch (err) {
+        console.error("Error inicializando RENDIX POS:", err);
+        setInitError(err.message || "Error desconocido al iniciar la base de datos local");
+      } finally {
+        setLoaded(true);
+      }
     }
     init();
   }, []);
@@ -53,11 +67,14 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", nextTheme);
   };
 
-  const handleSaleDone = async (newSale, updatedProducts) => {
+  const handleSaleDone = async (newSale, stockPatches) => {
     setSales(prev => [newSale, ...prev]);
-    setProducts(updatedProducts);
+    setProducts(prev => prev.map(p => {
+      const patch = stockPatches.find(x => x.sku === p.sku);
+      return patch ? { ...p, ...patch.changes } : p;
+    }));
     await saveDbSale(newSale);
-    await saveDbProducts(updatedProducts);
+    await updateDbProducts(stockPatches);
     // Clear global cart
     setCart([]);
     setDescPct(0);
@@ -67,6 +84,11 @@ export default function App() {
   const updateProductsState = async (newProducts) => {
     setProducts(newProducts);
     await saveDbProducts(newProducts);
+  };
+
+  const updateSingleProduct = async (sku, changes) => {
+    setProducts(prev => prev.map(p => p.sku === sku ? { ...p, ...changes } : p));
+    await updateDbProducts([{ sku, changes }]);
   };
 
   const updateConfigState = async (newConfig) => {
@@ -81,6 +103,15 @@ export default function App() {
     return (
       <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--accent-cyan)", fontFamily: "var(--font-heading)", fontWeight: 700 }}>
         Cargando RENDIX POS (IndexedDB)...
+      </div>
+    );
+  }
+
+  if (initError) {
+    return (
+      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--status-danger)", fontFamily: "var(--font-heading)", fontWeight: 700, textAlign: "center", padding: 24, flexDirection: "column", gap: 8 }}>
+        <div>No se pudo iniciar la base de datos local</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 500, fontFamily: "var(--font-body)" }}>{initError}</div>
       </div>
     );
   }
@@ -114,7 +145,7 @@ export default function App() {
           />
         )}
         {activeTab === "catalogo" && (
-          <CatalogoTab products={products} onUpdate={updateProductsState} />
+          <CatalogoTab products={products} onUpdateOne={updateSingleProduct} />
         )}
         {activeTab === "ventas" && (
           <VentasTab sales={sales} />

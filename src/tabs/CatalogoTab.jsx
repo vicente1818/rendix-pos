@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { save } from "../utils/storage.js";
-import { postToSheets } from "../utils/sheets.js";
+import { queueOrSyncAction } from "../utils/syncManager.js";
 import { fileToDataURL } from "../utils/tiendanube.js";
-import { K, fmt } from "../utils/constants.js";
+import { fmt } from "../utils/constants.js";
 import { Button, SectionCard, SearchInput, StockBadge, Badge } from "../components/UI.jsx";
 import { getProductImage } from "../utils/imageMatcher.js";
 
-export function CatalogoTab({ products, onUpdate }) {
+export function CatalogoTab({ products, onUpdateOne }) {
   const [cat, setCat] = useState("Todos");
   const [editing, setEditing] = useState(null);
   const [newStock, setNewStock] = useState("");
@@ -23,26 +22,21 @@ export function CatalogoTab({ products, onUpdate }) {
   const updateStock = async () => {
     const n = parseInt(newStock);
     if (isNaN(n) || n < 0) return;
-    const prev = products.find(p => p.sku === editing)?.stock || 0;
-    const updated = products.map(p => p.sku === editing ? { ...p, stock: n } : p);
-    await save(K.products, updated);
-    await postToSheets("stock_update", { sku: editing, nombre: products.find(p => p.sku === editing)?.nombre || "", stockAnterior: prev, stockNuevo: n, fecha: new Date().toISOString() });
-    onUpdate(updated);
+    const target = products.find(p => p.sku === editing);
+    const prev = target?.stock || 0;
+    await onUpdateOne(editing, { stock: n });
+    await queueOrSyncAction("stock_update", { sku: editing, nombre: target?.nombre || "", stockAnterior: prev, stockNuevo: n, fecha: new Date().toISOString() });
     setEditing(null);
   };
 
   const toggleActive = async (sku) => {
     const p = products.find(x => x.sku === sku);
     if (!p) return;
-    const updated = products.map(x => x.sku === sku ? { ...x, activo: !x.activo } : x);
-    await save(K.products, updated);
-    onUpdate(updated);
+    await onUpdateOne(sku, { activo: !p.activo });
   };
 
   const saveImg = async (sku, url) => {
-    const updated = products.map(p => p.sku === sku ? { ...p, imagen: url || "" } : p);
-    await save(K.products, updated);
-    onUpdate(updated);
+    await onUpdateOne(sku, { imagen: url || "" });
     setEditingImg(null);
   };
 
@@ -123,7 +117,8 @@ export function CatalogoTab({ products, onUpdate }) {
                       value={newStock}
                       onChange={e => setNewStock(e.target.value)}
                       placeholder="Cant."
-                      style={{ width: 70, fontSize: 12, height: 32 }}
+                      className="touch-target-48"
+                      style={{ width: 70, fontSize: 13 }}
                     />
                     <Button variant="primary" size="sm" onClick={updateStock}>OK</Button>
                     <Button variant="ghost" size="sm" onClick={() => setEditing(null)}>✕</Button>

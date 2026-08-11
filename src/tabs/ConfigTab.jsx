@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { CATS, K } from "../utils/constants.js";
-import { save } from "../utils/storage.js";
-import { setSheetsUrl, fetchCatalogFromSheets } from "../utils/sheets.js";
+import { CATS } from "../utils/constants.js";
+import { setSheetsUrl, setSheetsSecret, fetchCatalogFromSheets } from "../utils/sheets.js";
 import { fetchFromTiendaNube, mergeTNProducts } from "../utils/tiendanube.js";
 import { exportVentas, exportProductos, exportClientes, importCatalogFromCSV } from "../utils/csv.js";
 import { Button, SectionCard } from "../components/UI.jsx";
@@ -19,6 +18,8 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
   const [importResult, setImportResult] = useState(null);
   const [tnStoreId, setTnStoreId] = useState(config.tnStoreId || "");
   const [tnToken, setTnToken] = useState(config.tnToken || "");
+  const [showTnToken, setShowTnToken] = useState(false);
+  const [sheetsSecretInput, setSheetsSecretInput] = useState(config.sheetsSecret || "");
   const [testingTN, setTestingTN] = useState(false);
   const [farmaPreview, setFarmaPreview] = useState(false);
   const [farmaImporting, setFarmaImporting] = useState(false);
@@ -26,9 +27,9 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
   const showMsg = (t, ms = 2500) => { setMsg(t); setTimeout(() => setMsg(null), ms); };
 
   const saveConfig = async () => {
-    const updated = { ...config, sheetsUrl: sheetsInput, vendedor: vendedorInput, tnStoreId, tnToken };
-    await save(K.config, updated);
+    const updated = { ...config, sheetsUrl: sheetsInput, sheetsSecret: sheetsSecretInput, vendedor: vendedorInput, tnStoreId, tnToken };
     setSheetsUrl(sheetsInput);
+    setSheetsSecret(sheetsSecretInput);
     onUpdateConfig(updated);
     showMsg("✓ Configuración guardada correctamente");
   };
@@ -37,10 +38,10 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     if (!sheetsInput) return;
     setTesting(true);
     setSheetsUrl(sheetsInput);
+    setSheetsSecret(sheetsSecretInput);
     const catalog = await fetchCatalogFromSheets();
     setTesting(false);
     if (catalog) {
-      await save(K.products, catalog);
       onUpdateProducts(catalog);
       showMsg(`✓ Catálogo importado de Sheets (${catalog.length} productos)`);
     } else {
@@ -55,7 +56,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
     setTestingTN(false);
     if (tnProds) {
       const merged = mergeTNProducts(products, tnProds);
-      await save(K.products, merged);
       onUpdateProducts(merged);
       showMsg(`✓ Sincronizados ${tnProds.length} productos de TiendaNube`);
     } else {
@@ -73,7 +73,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
         setImportMsg(`⚠️ Error: ${res.msg}`);
         return;
       }
-      await save(K.products, res.products);
       onUpdateProducts(res.products);
       setImportResult(res);
       setImportMsg(null);
@@ -96,7 +95,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
       imagen: form.imagen || ""
     };
     const updated = [newProd, ...products.filter(p => p.sku !== newProd.sku)];
-    await save(K.products, updated);
     onUpdateProducts(updated);
     setSaving(false);
     setForm({ sku: "", nombre: "", cat: CATS[3], marca: "", pres: "", precio: "", stock: "", stockMin: "3", imagen: "" });
@@ -135,7 +133,6 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
   const importFarmaCatalog = async () => {
     setFarmaImporting(true);
     const merged = mergeFarmaIntoExistingCatalog(products);
-    await save(K.products, merged);
     onUpdateProducts(merged);
     setFarmaImporting(false);
     setFarmaPreview(false);
@@ -197,6 +194,17 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
       <SectionCard title="Sincronización Google Sheets Hub">
         <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>URL del Web App de Apps Script</label>
         <input value={sheetsInput} onChange={e => setSheetsInput(e.target.value)} placeholder="https://script.google.com/macros/s/..." style={{ marginBottom: 10 }} />
+        <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Clave secreta compartida</label>
+        <input
+          type="password"
+          value={sheetsSecretInput}
+          onChange={e => setSheetsSecretInput(e.target.value)}
+          placeholder="Definila también en el script (RENDIX_SECRET)"
+          style={{ marginBottom: 6 }}
+        />
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.4 }}>
+          El Web App de Apps Script solo debe aceptar pedidos que incluyan esta clave. Sin esto, cualquiera con la URL puede leer o escribir en tu planilla.
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <Button variant="secondary" size="sm" onClick={saveConfig} style={{ flex: 1 }}>Guardar Config</Button>
           <Button variant="ghost" size="sm" onClick={syncSheetsCatalog} disabled={testing} style={{ flex: 1 }}>
@@ -206,15 +214,29 @@ export function ConfigTab({ products, sales, onUpdateProducts, config, onUpdateC
       </SectionCard>
 
       <SectionCard title="Integración Tienda Nube">
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 6 }}>
           <div>
             <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Store ID</label>
             <input value={tnStoreId} onChange={e => setTnStoreId(e.target.value)} placeholder="123456" />
           </div>
           <div>
             <label style={{ fontSize: 11, color: "var(--text-muted)", display: "block", marginBottom: 4 }}>Bearer Token</label>
-            <input value={tnToken} onChange={e => setTnToken(e.target.value)} placeholder="Token API" />
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                type={showTnToken ? "text" : "password"}
+                value={tnToken}
+                onChange={e => setTnToken(e.target.value)}
+                placeholder="Token API"
+                style={{ flex: 1 }}
+              />
+              <Button variant="ghost" size="sm" ariaLabel={showTnToken ? "Ocultar token" : "Mostrar token"} onClick={() => setShowTnToken(v => !v)}>
+                {showTnToken ? "🙈" : "👁"}
+              </Button>
+            </div>
           </div>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10, lineHeight: 1.4 }}>
+          Este token queda guardado en este dispositivo. No lo compartas ni lo dejes visible en un equipo compartido.
         </div>
         <Button variant="ghost" fullWidth size="sm" onClick={syncTiendaNube} disabled={testingTN}>
           {testingTN ? "Sincronizando..." : "Sincronizar Stock Tienda Nube"}

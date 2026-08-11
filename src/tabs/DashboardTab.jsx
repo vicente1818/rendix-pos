@@ -1,46 +1,51 @@
+import { useMemo } from "react";
 import { CANALES, fmt } from "../utils/constants.js";
 import { MetricCard, SectionCard, StockBadge } from "../components/UI.jsx";
 import { Sparkline, ChannelDistributionBar } from "../components/AnalyticsCharts.jsx";
 
+const CHANNEL_COLORS = {
+  "Mostrador": "var(--accent-cyan)",
+  "WhatsApp": "#25D366",
+  "Instagram": "#E1306C",
+  "TiendaNube": "#3B82F6",
+  "MercadoLibre": "#FFE600"
+};
+
 export function DashboardTab({ sales, products }) {
-  const hoy = new Date().toDateString();
-  const sHoy = sales.filter(s => new Date(s.fecha).toDateString() === hoy);
-  const totHoy = sHoy.reduce((a, v) => a + v.total, 0);
-  const totGral = sales.reduce((a, v) => a + v.total, 0);
+  const { sHoy, totHoy, totGral, last7DaysTrend, porCanal, top } = useMemo(() => {
+    const hoy = new Date().toDateString();
+    const sHoyCalc = sales.filter(s => new Date(s.fecha).toDateString() === hoy);
+    const totHoyCalc = sHoyCalc.reduce((a, v) => a + v.total, 0);
+    const totGralCalc = sales.reduce((a, v) => a + v.total, 0);
 
-  // Generate 7-day sales trend for Sparkline
-  const last7DaysTrend = [0, 0, 0, 0, 0, 0, 0];
-  const now = new Date();
-  sales.forEach(s => {
-    const saleDate = new Date(s.fecha);
-    const diffDays = Math.floor((now - saleDate) / (1000 * 60 * 60 * 24));
-    if (diffDays >= 0 && diffDays < 7) {
-      last7DaysTrend[6 - diffDays] += s.total;
-    }
-  });
+    // Generate 7-day sales trend for Sparkline
+    const trend = [0, 0, 0, 0, 0, 0, 0];
+    const now = new Date();
+    sales.forEach(s => {
+      const saleDate = new Date(s.fecha);
+      const diffDays = Math.floor((now - saleDate) / (1000 * 60 * 60 * 24));
+      if (diffDays >= 0 && diffDays < 7) {
+        trend[6 - diffDays] += s.total;
+      }
+    });
 
-  const channelColors = {
-    "Mostrador": "var(--accent-cyan)",
-    "WhatsApp": "#25D366",
-    "Instagram": "#E1306C",
-    "TiendaNube": "#3B82F6",
-    "MercadoLibre": "#FFE600"
-  };
+    const canal = CANALES.map(c => {
+      const total = sales.filter(s => s.canal === c).reduce((a, s) => a + s.total, 0);
+      return { name: c, total, color: CHANNEL_COLORS[c] || "var(--accent-cyan)" };
+    });
 
-  const porCanal = CANALES.map(c => {
-    const total = sales.filter(s => s.canal === c).reduce((a, s) => a + s.total, 0);
-    return { name: c, total, color: channelColors[c] || "var(--accent-cyan)" };
-  });
+    const porProd = {};
+    sales.forEach(s => s.items?.forEach(i => {
+      if (!porProd[i.nombre]) porProd[i.nombre] = { qty: 0, total: 0 };
+      porProd[i.nombre].qty += i.qty;
+      porProd[i.nombre].total += i.subtotal;
+    }));
+    const topCalc = Object.entries(porProd).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5);
 
-  const porProd = {};
-  sales.forEach(s => s.items?.forEach(i => {
-    if (!porProd[i.nombre]) porProd[i.nombre] = { qty: 0, total: 0 };
-    porProd[i.nombre].qty += i.qty;
-    porProd[i.nombre].total += i.subtotal;
-  }));
+    return { sHoy: sHoyCalc, totHoy: totHoyCalc, totGral: totGralCalc, last7DaysTrend: trend, porCanal: canal, top: topCalc };
+  }, [sales]);
 
-  const top = Object.entries(porProd).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5);
-  const alertas = products.filter(p => p.stock <= p.stockMin);
+  const alertas = useMemo(() => products.filter(p => p.stock <= p.stockMin), [products]);
 
   return (
     <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 14 }} className="animate-fade-in">
